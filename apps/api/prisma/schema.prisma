@@ -86,6 +86,12 @@ model DocumentChunk {
 
   metadata Json?
 
+  embedding Unsupported("vector(384)")?
+
+  embeddingProvider String?
+  embeddingModel    String?
+  embeddedAt        DateTime?
+
   createdAt DateTime @default(now())
 
   @@unique([unitId, chunkIndex])
