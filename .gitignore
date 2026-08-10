@@ -1,0 +1,40 @@
+# macOS
+.DS_Store
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Node
+node_modules/
+.next/
+dist/
+coverage/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# IDE
+.vscode/
+.idea/
+
+# Runtime data
+uploads/
+storage/
+tmp/
+logs/
+
+# ML / model artifacts
+*.pt
+*.pth
+*.ckpt
+*.onnx
+
+# Local databases
+*.db
+*.sqlite
