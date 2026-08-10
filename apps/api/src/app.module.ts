@@ -5,6 +5,7 @@ import { AppService } from './app.service';
 import { HealthModule } from './health/health.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { StudyPacksModule } from './study-packs/study-packs.module';
+import { DocumentsModule } from './documents/documents.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { StudyPacksModule } from './study-packs/study-packs.module';
     HealthModule,
     PrismaModule,
     StudyPacksModule,
+    DocumentsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
