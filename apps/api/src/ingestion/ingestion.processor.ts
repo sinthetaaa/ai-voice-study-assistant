@@ -5,6 +5,7 @@ import { Job } from 'bullmq';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { LocalStorageService } from '../storage/local-storage.service';
+import { ChunkingService } from '../chunking/chunking.service';
 
 import {
   DOCUMENT_INGESTION_QUEUE,
@@ -25,6 +26,7 @@ export class IngestionProcessor extends WorkerHost {
     private readonly prisma: PrismaService,
     private readonly storage: LocalStorageService,
     private readonly configService: ConfigService,
+    private readonly chunkingService: ChunkingService,
   ) {
     super();
   }
@@ -69,6 +71,31 @@ export class IngestionProcessor extends WorkerHost {
         document.mimeType,
       );
 
+      /*
+       * Generate chunks while preserving the original
+       * page / slide / section / sheet boundary.
+       *
+       * Each parsed unit gets chunked independently,
+       * so chunks never cross between two units.
+       */
+      const preparedUnits = parsed.units.map((unit) => {
+        const chunks = this.chunkingService.chunkText(unit.text);
+
+        return {
+          unit,
+          chunks,
+        };
+      });
+
+      const chunkCount = preparedUnits.reduce(
+        (total, preparedUnit) => total + preparedUnit.chunks.length,
+        0,
+      );
+
+      /*
+       * Persist normalized units and their chunks
+       * in one nested Prisma update.
+       */
       await this.prisma.document.update({
         where: {
           id: document.id,
@@ -84,21 +111,47 @@ export class IngestionProcessor extends WorkerHost {
           errorMessage: null,
 
           units: {
+            /*
+             * Makes re-ingestion deterministic.
+             * Existing units are removed first.
+             *
+             * Because DocumentChunk uses
+             * ON DELETE CASCADE from DocumentUnit,
+             * old chunks are removed automatically.
+             */
             deleteMany: {},
 
-            create: parsed.units.map((unit) => ({
+            create: preparedUnits.map(({ unit, chunks }) => ({
               unitIndex: unit.index,
+
               kind: unit.kind,
+
               label: unit.label,
+
               text: unit.text,
+
               metadata: unit.metadata,
+
+              chunks: {
+                create: chunks.map((chunk) => ({
+                  chunkIndex: chunk.chunkIndex,
+
+                  text: chunk.text,
+
+                  charCount: chunk.charCount,
+
+                  wordCount: chunk.wordCount,
+
+                  metadata: chunk.metadata,
+                })),
+              },
             })),
           },
         },
       });
 
       this.logger.log(
-        `Finished ${document.originalName}: ${parsed.units.length} units`,
+        `Finished ${document.originalName}: ${parsed.units.length} units, ${chunkCount} chunks`,
       );
     } catch (error) {
       const message =
@@ -145,9 +198,13 @@ export class IngestionProcessor extends WorkerHost {
 
     const formData = new FormData();
 
-    // Copy Buffer bytes into a real ArrayBuffer.
-    // This avoids Buffer<ArrayBufferLike> vs BlobPart
-    // incompatibilities in newer Node/TypeScript typings.
+    /*
+     * Copy Buffer bytes into a real ArrayBuffer.
+     *
+     * This avoids Buffer<ArrayBufferLike> vs
+     * BlobPart incompatibilities in newer
+     * Node.js / TypeScript typings.
+     */
     const arrayBuffer = new ArrayBuffer(fileBuffer.byteLength);
 
     const byteView = new Uint8Array(arrayBuffer);
