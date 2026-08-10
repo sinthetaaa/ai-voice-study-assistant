@@ -62,11 +62,34 @@ model DocumentUnit {
 
   metadata Json?
 
+  chunks DocumentChunk[]
+
   createdAt DateTime @default(now())
 
   @@unique([documentId, unitIndex])
   @@index([documentId])
   @@index([kind])
+}
+
+model DocumentChunk {
+  id String @id @default(uuid())
+
+  unitId String
+  unit   DocumentUnit @relation(fields: [unitId], references: [id], onDelete: Cascade)
+
+  chunkIndex Int
+
+  text String @db.Text
+
+  charCount Int
+  wordCount Int
+
+  metadata Json?
+
+  createdAt DateTime @default(now())
+
+  @@unique([unitId, chunkIndex])
+  @@index([unitId])
 }
 
 enum DocumentStatus {
