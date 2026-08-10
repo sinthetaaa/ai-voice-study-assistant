@@ -5,17 +5,21 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { LocalStorageService } from '../storage/local-storage.service';
+import { IngestionQueueService } from '../ingestion/ingestion-queue.service';
 
 @Injectable()
 export class DocumentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: LocalStorageService,
+    private readonly ingestionQueue: IngestionQueueService,
   ) {}
 
   async uploadDocuments(studyPackId: string, files: Express.Multer.File[]) {
     if (!files || files.length === 0) {
-      throw new BadRequestException('At least one document must be uploaded');
+      throw new BadRequestException(
+        'At least one supported document must be uploaded',
+      );
     }
 
     const studyPack = await this.prisma.studyPack.findUnique({
@@ -36,7 +40,10 @@ export class DocumentsService {
       storageKey: string;
     }[] = [];
 
+    let createdDocumentIds: string[] = [];
+
     try {
+      // Save uploaded files to local storage first
       for (const file of files) {
         const stored = await this.storage.saveDocument(studyPackId, file);
 
@@ -46,6 +53,7 @@ export class DocumentsService {
         });
       }
 
+      // Create all Document records atomically
       const documents = await this.prisma.$transaction(
         storedFiles.map(({ file, storageKey }) =>
           this.prisma.document.create({
@@ -60,12 +68,32 @@ export class DocumentsService {
         ),
       );
 
+      createdDocumentIds = documents.map((document) => document.id);
+
+      // Queue every uploaded document for
+      // asynchronous ingestion.
+      await this.ingestionQueue.enqueueDocuments(createdDocumentIds);
+
       return {
         studyPackId,
         uploaded: documents.length,
         documents,
       };
     } catch (error) {
+      // If DB records were created but queueing failed,
+      // remove those records again.
+      if (createdDocumentIds.length > 0) {
+        await this.prisma.document.deleteMany({
+          where: {
+            id: {
+              in: createdDocumentIds,
+            },
+          },
+        });
+      }
+
+      // Remove any physical files that were stored
+      // before the failure.
       await Promise.allSettled(
         storedFiles.map(({ storageKey }) => this.storage.delete(storageKey)),
       );
