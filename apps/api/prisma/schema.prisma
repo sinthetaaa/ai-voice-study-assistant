@@ -36,11 +36,37 @@ model Document {
 
   errorMessage String?
 
+  parser         String?
+  parsedMetadata Json?
+
+  units DocumentUnit[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([studyPackId])
   @@index([status])
+}
+
+model DocumentUnit {
+  id String @id @default(uuid())
+
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  unitIndex Int
+  kind      String
+  label     String
+
+  text String @db.Text
+
+  metadata Json?
+
+  createdAt DateTime @default(now())
+
+  @@unique([documentId, unitIndex])
+  @@index([documentId])
+  @@index([kind])
 }
 
 enum DocumentStatus {
