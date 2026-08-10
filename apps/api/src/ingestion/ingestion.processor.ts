@@ -6,6 +6,7 @@ import { Job } from 'bullmq';
 import { PrismaService } from '../prisma/prisma.service';
 import { LocalStorageService } from '../storage/local-storage.service';
 import { ChunkingService } from '../chunking/chunking.service';
+import { EmbeddingClientService } from '../embeddings/embedding-client.service';
 
 import {
   DOCUMENT_INGESTION_QUEUE,
@@ -24,9 +25,14 @@ export class IngestionProcessor extends WorkerHost {
 
   constructor(
     private readonly prisma: PrismaService,
+
     private readonly storage: LocalStorageService,
+
     private readonly configService: ConfigService,
+
     private readonly chunkingService: ChunkingService,
+
+    private readonly embeddingClient: EmbeddingClientService,
   ) {
     super();
   }
@@ -56,6 +62,7 @@ export class IngestionProcessor extends WorkerHost {
       where: {
         id: document.id,
       },
+
       data: {
         status: 'PROCESSING',
         errorMessage: null,
@@ -63,7 +70,19 @@ export class IngestionProcessor extends WorkerHost {
     });
 
     try {
+      /*
+       * ------------------------------------------------
+       * 1. Read uploaded file
+       * ------------------------------------------------
+       */
+
       const fileBuffer = await this.storage.readDocument(document.storageKey);
+
+      /*
+       * ------------------------------------------------
+       * 2. Parse document through FastAPI
+       * ------------------------------------------------
+       */
 
       const parsed = await this.parseWithAiService(
         fileBuffer,
@@ -72,12 +91,11 @@ export class IngestionProcessor extends WorkerHost {
       );
 
       /*
-       * Generate chunks while preserving the original
-       * page / slide / section / sheet boundary.
-       *
-       * Each parsed unit gets chunked independently,
-       * so chunks never cross between two units.
+       * ------------------------------------------------
+       * 3. Generate deterministic chunks
+       * ------------------------------------------------
        */
+
       const preparedUnits = parsed.units.map((unit) => {
         const chunks = this.chunkingService.chunkText(unit.text);
 
@@ -92,10 +110,21 @@ export class IngestionProcessor extends WorkerHost {
         0,
       );
 
+      if (chunkCount === 0) {
+        throw new Error('Document produced no searchable chunks');
+      }
+
       /*
-       * Persist normalized units and their chunks
-       * in one nested Prisma update.
+       * ------------------------------------------------
+       * 4. Persist normalized units + chunks
+       *
+       * IMPORTANT:
+       * The document remains PROCESSING here.
+       * It becomes READY only after embeddings
+       * have been generated and stored.
+       * ------------------------------------------------
        */
+
       await this.prisma.document.update({
         where: {
           id: document.id,
@@ -106,18 +135,16 @@ export class IngestionProcessor extends WorkerHost {
 
           parsedMetadata: parsed.metadata,
 
-          status: 'READY',
-
           errorMessage: null,
 
           units: {
             /*
-             * Makes re-ingestion deterministic.
-             * Existing units are removed first.
+             * Re-ingestion is deterministic.
              *
-             * Because DocumentChunk uses
-             * ON DELETE CASCADE from DocumentUnit,
-             * old chunks are removed automatically.
+             * Existing DocumentChunk rows are
+             * removed automatically because the
+             * DocumentUnit -> DocumentChunk
+             * relation uses ON DELETE CASCADE.
              */
             deleteMany: {},
 
@@ -150,8 +177,127 @@ export class IngestionProcessor extends WorkerHost {
         },
       });
 
+      /*
+       * ------------------------------------------------
+       * 5. Load the persisted chunks
+       *
+       * We query them from PostgreSQL rather than
+       * relying on the in-memory objects so the
+       * IDs used for vector persistence are the
+       * actual database IDs.
+       * ------------------------------------------------
+       */
+
+      const persistedChunks = await this.prisma.documentChunk.findMany({
+        where: {
+          unit: {
+            documentId: document.id,
+          },
+        },
+
+        select: {
+          id: true,
+          text: true,
+          chunkIndex: true,
+
+          unit: {
+            select: {
+              unitIndex: true,
+            },
+          },
+        },
+
+        orderBy: [
+          {
+            unit: {
+              unitIndex: 'asc',
+            },
+          },
+
+          {
+            chunkIndex: 'asc',
+          },
+        ],
+      });
+
+      if (persistedChunks.length !== chunkCount) {
+        throw new Error(
+          `Persisted chunk count mismatch: expected ${chunkCount}, received ${persistedChunks.length}`,
+        );
+      }
+
+      /*
+       * ------------------------------------------------
+       * 6. Generate BGE document embeddings
+       *
+       * EmbeddingClientService automatically
+       * batches requests in groups of at most 64.
+       * ------------------------------------------------
+       */
+
+      const embeddingResult = await this.embeddingClient.embedDocuments(
+        persistedChunks.map((chunk) => chunk.text),
+      );
+
+      if (embeddingResult.embeddings.length !== persistedChunks.length) {
+        throw new Error(
+          `Embedding count mismatch: expected ${persistedChunks.length}, received ${embeddingResult.embeddings.length}`,
+        );
+      }
+
+      /*
+       * ------------------------------------------------
+       * 7. Store vectors in PostgreSQL
+       *
+       * Prisma represents vector(384) as an
+       * Unsupported field, so vector persistence
+       * is performed using parameterized raw SQL.
+       * ------------------------------------------------
+       */
+
+      for (let index = 0; index < persistedChunks.length; index += 1) {
+        const chunk = persistedChunks[index];
+
+        const embedding = embeddingResult.embeddings[index];
+
+        const vectorLiteral = this.toVectorLiteral(embedding);
+
+        await this.prisma.$executeRaw`
+          UPDATE "DocumentChunk"
+          SET
+            "embedding" = ${vectorLiteral}::vector,
+            "embeddingProvider" = ${embeddingResult.provider},
+            "embeddingModel" = ${embeddingResult.model},
+            "embeddedAt" = CURRENT_TIMESTAMP
+          WHERE "id" = ${chunk.id}
+        `;
+      }
+
+      /*
+       * ------------------------------------------------
+       * 8. Mark document READY
+       *
+       * READY now means:
+       *
+       * parsed
+       * + chunked
+       * + embedded
+       * ------------------------------------------------
+       */
+
+      await this.prisma.document.update({
+        where: {
+          id: document.id,
+        },
+
+        data: {
+          status: 'READY',
+          errorMessage: null,
+        },
+      });
+
       this.logger.log(
-        `Finished ${document.originalName}: ${parsed.units.length} units, ${chunkCount} chunks`,
+        `Finished ${document.originalName}: ${parsed.units.length} units, ${chunkCount} chunks, ${embeddingResult.embeddings.length} embeddings`,
       );
     } catch (error) {
       const message =
@@ -168,6 +314,7 @@ export class IngestionProcessor extends WorkerHost {
           where: {
             id: document.id,
           },
+
           data: {
             status: 'FAILED',
             errorMessage: message,
@@ -187,6 +334,26 @@ export class IngestionProcessor extends WorkerHost {
     }
   }
 
+  /*
+   * Convert a numeric embedding into the textual
+   * format accepted by pgvector:
+   *
+   * [0.123,-0.456,...]
+   */
+  private toVectorLiteral(embedding: number[]): string {
+    if (embedding.length !== 384) {
+      throw new Error(
+        `Expected a 384-dimensional embedding, received ${embedding.length}`,
+      );
+    }
+
+    if (embedding.some((value) => !Number.isFinite(value))) {
+      throw new Error('Embedding contains non-finite numeric values');
+    }
+
+    return `[${embedding.join(',')}]`;
+  }
+
   private async parseWithAiService(
     fileBuffer: Buffer,
     filename: string,
@@ -199,11 +366,12 @@ export class IngestionProcessor extends WorkerHost {
     const formData = new FormData();
 
     /*
-     * Copy Buffer bytes into a real ArrayBuffer.
+     * Copy Buffer bytes into a real
+     * ArrayBuffer.
      *
-     * This avoids Buffer<ArrayBufferLike> vs
-     * BlobPart incompatibilities in newer
-     * Node.js / TypeScript typings.
+     * This avoids Buffer<ArrayBufferLike>
+     * vs BlobPart incompatibilities in
+     * newer Node.js / TypeScript typings.
      */
     const arrayBuffer = new ArrayBuffer(fileBuffer.byteLength);
 
