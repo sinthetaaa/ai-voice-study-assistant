@@ -15,7 +15,7 @@ export class DocumentsService {
 
   async uploadDocuments(studyPackId: string, files: Express.Multer.File[]) {
     if (!files || files.length === 0) {
-      throw new BadRequestException('At least one PDF must be uploaded');
+      throw new BadRequestException('At least one document must be uploaded');
     }
 
     const studyPack = await this.prisma.studyPack.findUnique({
