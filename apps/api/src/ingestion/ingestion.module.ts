@@ -1,6 +1,9 @@
 import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+
+import { StorageModule } from '../storage/storage.module';
+
 import { IngestionQueueService } from './ingestion-queue.service';
 import { IngestionProcessor } from './ingestion.processor';
 import { DOCUMENT_INGESTION_QUEUE } from './ingestion.constants';
@@ -8,6 +11,8 @@ import { DOCUMENT_INGESTION_QUEUE } from './ingestion.constants';
 @Module({
   imports: [
     ConfigModule,
+
+    StorageModule,
 
     BullModule.forRootAsync({
       imports: [ConfigModule],
@@ -19,6 +24,7 @@ import { DOCUMENT_INGESTION_QUEUE } from './ingestion.constants';
         return {
           connection: {
             host: redisUrl.hostname,
+
             port: Number(redisUrl.port || '6379'),
 
             username: redisUrl.username || undefined,

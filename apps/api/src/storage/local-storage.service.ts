@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, extname, join, resolve } from 'node:path';
 
 @Injectable()
@@ -27,6 +27,12 @@ export class LocalStorageService {
     return {
       storageKey,
     };
+  }
+
+  async readDocument(storageKey: string): Promise<Buffer> {
+    const absolutePath = join(this.storageRoot, storageKey);
+
+    return readFile(absolutePath);
   }
 
   async delete(storageKey: string) {
