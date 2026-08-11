@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -16,6 +20,16 @@ type ConceptChunkRow = {
   unitLabel: string | null;
 };
 
+type ConceptExtractionBundle = {
+  chunks: ConceptChunkRow[];
+  documentCount: number;
+  concepts: ExtractedConcept[];
+};
+
+type PreparedConcept = ExtractedConcept & {
+  normalizedName: string;
+};
+
 export type ConceptPreviewResult = {
   studyPackId: string;
   documentCount: number;
@@ -24,11 +38,16 @@ export type ConceptPreviewResult = {
   concepts: ExtractedConcept[];
 };
 
+export type ConceptGenerationResult = ConceptPreviewResult & {
+  scopeDocumentId: string | null;
+  persistedConceptCount: number;
+  persistedSourceCount: number;
+};
+
 @Injectable()
 export class ConceptsService {
   constructor(
     private readonly prisma: PrismaService,
-
     private readonly conceptAiClient: ConceptAiClientService,
   ) {}
 
@@ -36,88 +55,72 @@ export class ConceptsService {
     studyPackId: string,
     documentId?: string,
   ): Promise<ConceptPreviewResult> {
-    const studyPack = await this.prisma.studyPack.findUnique({
-      where: {
-        id: studyPackId,
-      },
+    const extraction = await this.extractStudyPackConcepts(
+      studyPackId,
+      documentId,
+    );
 
-      select: {
-        id: true,
-      },
-    });
+    return {
+      studyPackId,
+      documentCount: extraction.documentCount,
+      chunkCount: extraction.chunks.length,
+      conceptCount: extraction.concepts.length,
+      concepts: extraction.concepts,
+    };
+  }
 
-    if (!studyPack) {
-      throw new NotFoundException(`Study Pack ${studyPackId} was not found`);
+  async generateStudyPackConcepts(
+    studyPackId: string,
+    documentId?: string,
+  ): Promise<ConceptGenerationResult> {
+    const extraction = await this.extractStudyPackConcepts(
+      studyPackId,
+      documentId,
+    );
+
+    if (extraction.chunks.length === 0) {
+      throw new BadRequestException(
+        documentId
+          ? `Document ${documentId} has no READY chunks available for concept generation`
+          : `Study Pack ${studyPackId} has no READY chunks available for concept generation`,
+      );
     }
 
-    if (documentId) {
-      const document = await this.prisma.document.findFirst({
-        where: {
-          id: documentId,
-          studyPackId,
-        },
-
-        select: {
-          id: true,
-        },
-      });
-
-      if (!document) {
-        throw new NotFoundException(
-          `Document ${documentId} was not found in Study Pack ${studyPackId}`,
-        );
-      }
+    if (extraction.concepts.length === 0) {
+      throw new BadRequestException(
+        'Concept extraction returned no concepts; existing persisted concepts were not modified',
+      );
     }
 
-    const chunks = await this.prisma.$queryRaw<ConceptChunkRow[]>`
-      SELECT
-        dc.id AS "id",
-        dc.text AS "text",
+    const persistenceResult = await this.persistConcepts(
+      studyPackId,
+      extraction.chunks,
+      extraction.concepts,
+      documentId,
+    );
 
+    return {
+      studyPackId,
+      documentCount: extraction.documentCount,
+      chunkCount: extraction.chunks.length,
+      conceptCount: extraction.concepts.length,
+      concepts: extraction.concepts,
+      scopeDocumentId: documentId ?? null,
+      persistedConceptCount: persistenceResult.persistedConceptCount,
+      persistedSourceCount: persistenceResult.persistedSourceCount,
+    };
+  }
 
-        d.id AS "documentId",
-        d."originalName" AS "documentName",
-
-
-        du.label AS "unitLabel"
-
-
-      FROM "DocumentChunk" dc
-
-
-      INNER JOIN "DocumentUnit" du
-        ON du.id = dc."unitId"
-
-
-      INNER JOIN "Document" d
-        ON d.id = du."documentId"
-
-
-      WHERE
-        d."studyPackId" = ${studyPackId}
-
-
-        AND d.status = 'READY'
-
-
-        AND (
-          ${documentId ?? null}::text IS NULL
-          OR d.id = ${documentId ?? null}
-        )
-
-
-      ORDER BY
-        d.id,
-        du."unitIndex",
-        dc."chunkIndex"
-    `;
+  private async extractStudyPackConcepts(
+    studyPackId: string,
+    documentId?: string,
+  ): Promise<ConceptExtractionBundle> {
+    const chunks = await this.loadStudyPackChunks(studyPackId, documentId);
 
     if (chunks.length === 0) {
       return {
-        studyPackId,
+        chunks: [],
         documentCount: 0,
-        chunkCount: 0,
-        conceptCount: 0,
         concepts: [],
       };
     }
@@ -134,15 +137,291 @@ export class ConceptsService {
     const documentCount = new Set(chunks.map((chunk) => chunk.documentId)).size;
 
     return {
-      studyPackId,
-
+      chunks,
       documentCount,
-
-      chunkCount: chunks.length,
-
-      conceptCount: concepts.length,
-
       concepts,
     };
+  }
+
+  private async loadStudyPackChunks(
+    studyPackId: string,
+    documentId?: string,
+  ): Promise<ConceptChunkRow[]> {
+    const studyPack = await this.prisma.studyPack.findUnique({
+      where: {
+        id: studyPackId,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!studyPack) {
+      throw new NotFoundException(`Study Pack ${studyPackId} was not found`);
+    }
+
+    if (documentId) {
+      const document = await this.prisma.document.findFirst({
+        where: {
+          id: documentId,
+          studyPackId,
+        },
+        select: {
+          id: true,
+        },
+      });
+
+      if (!document) {
+        throw new NotFoundException(
+          `Document ${documentId} was not found in Study Pack ${studyPackId}`,
+        );
+      }
+    }
+
+    return this.prisma.$queryRaw<ConceptChunkRow[]>`
+      SELECT
+        dc.id AS "id",
+        dc.text AS "text",
+        d.id AS "documentId",
+        d."originalName" AS "documentName",
+        du.label AS "unitLabel"
+      FROM "DocumentChunk" dc
+      INNER JOIN "DocumentUnit" du
+        ON du.id = dc."unitId"
+      INNER JOIN "Document" d
+        ON d.id = du."documentId"
+      WHERE
+        d."studyPackId" = ${studyPackId}
+        AND d.status = 'READY'
+        AND (
+          ${documentId ?? null}::text IS NULL
+          OR d.id = ${documentId ?? null}
+        )
+      ORDER BY
+        d.id,
+        du."unitIndex",
+        dc."chunkIndex"
+    `;
+  }
+
+  private async persistConcepts(
+    studyPackId: string,
+    chunks: ConceptChunkRow[],
+    concepts: ExtractedConcept[],
+    documentId?: string,
+  ): Promise<{
+    persistedConceptCount: number;
+    persistedSourceCount: number;
+  }> {
+    const preparedConcepts = this.prepareConceptsForPersistence(concepts);
+
+    const scopeChunkIds = chunks.map((chunk) => chunk.id);
+
+    await this.prisma.$transaction(async (transaction) => {
+      if (documentId) {
+        /*
+         * Document-scoped regeneration:
+         *
+         * Remove provenance contributed by the
+         * selected document only.
+         *
+         * Concepts supported by other documents
+         * remain intact.
+         */
+        await transaction.conceptSource.deleteMany({
+          where: {
+            chunkId: {
+              in: scopeChunkIds,
+            },
+          },
+        });
+      } else {
+        /*
+         * Full Study Pack regeneration:
+         *
+         * The generated concept set is
+         * authoritative, so replace the existing
+         * concept graph atomically.
+         *
+         * ConceptSource and relationships cascade
+         * from Concept.
+         */
+        await transaction.concept.deleteMany({
+          where: {
+            studyPackId,
+          },
+        });
+      }
+
+      for (const concept of preparedConcepts) {
+        let persistedConceptId: string;
+
+        if (documentId) {
+          /*
+           * A concept may already be supported by
+           * another document in this Study Pack.
+           *
+           * Reuse it by normalized identity and
+           * refresh its globally curated fields.
+           */
+          const persistedConcept = await transaction.concept.upsert({
+            where: {
+              studyPackId_normalizedName: {
+                studyPackId,
+                normalizedName: concept.normalizedName,
+              },
+            },
+
+            update: {
+              name: concept.name,
+              description: concept.description,
+              importance: concept.importance,
+              difficulty: concept.difficulty,
+            },
+
+            create: {
+              studyPackId,
+              name: concept.name,
+              normalizedName: concept.normalizedName,
+              description: concept.description,
+              importance: concept.importance,
+              difficulty: concept.difficulty,
+            },
+
+            select: {
+              id: true,
+            },
+          });
+
+          persistedConceptId = persistedConcept.id;
+        } else {
+          const persistedConcept = await transaction.concept.create({
+            data: {
+              studyPackId,
+              name: concept.name,
+              normalizedName: concept.normalizedName,
+              description: concept.description,
+              importance: concept.importance,
+              difficulty: concept.difficulty,
+            },
+
+            select: {
+              id: true,
+            },
+          });
+
+          persistedConceptId = persistedConcept.id;
+        }
+
+        await transaction.conceptSource.createMany({
+          data: concept.supportingChunkIds.map((chunkId) => ({
+            conceptId: persistedConceptId,
+            chunkId,
+            relevance: 1.0,
+          })),
+
+          skipDuplicates: true,
+        });
+      }
+
+      if (documentId) {
+        /*
+         * A previously persisted concept may have
+         * been supported only by this document and
+         * no longer appear after regeneration.
+         *
+         * Its sources were removed above, so clean
+         * up any resulting orphan concept.
+         */
+        await transaction.concept.deleteMany({
+          where: {
+            studyPackId,
+
+            sources: {
+              none: {},
+            },
+          },
+        });
+      }
+    });
+
+    const [persistedConceptCount, persistedSourceCount] =
+      await this.prisma.$transaction([
+        this.prisma.concept.count({
+          where: {
+            studyPackId,
+          },
+        }),
+
+        this.prisma.conceptSource.count({
+          where: {
+            concept: {
+              studyPackId,
+            },
+          },
+        }),
+      ]);
+
+    return {
+      persistedConceptCount,
+      persistedSourceCount,
+    };
+  }
+
+  private prepareConceptsForPersistence(
+    concepts: ExtractedConcept[],
+  ): PreparedConcept[] {
+    const seenNormalizedNames = new Map<string, string>();
+
+    return concepts.map((concept) => {
+      const normalizedName = this.normalizeConceptName(concept.name);
+
+      if (!normalizedName) {
+        throw new BadRequestException(
+          `Concept "${concept.name}" cannot be normalized to a valid persistence key`,
+        );
+      }
+
+      const previousName = seenNormalizedNames.get(normalizedName);
+
+      if (previousName) {
+        throw new BadRequestException(
+          `Concept persistence received duplicate normalized names: "${previousName}" and "${concept.name}"`,
+        );
+      }
+
+      seenNormalizedNames.set(normalizedName, concept.name);
+
+      return {
+        ...concept,
+        normalizedName,
+      };
+    });
+  }
+
+  private normalizeConceptName(name: string): string {
+    let normalized = name.normalize('NFKC').trim().toLowerCase();
+
+    /*
+     * Remove a trailing short acronym:
+     *
+     * "Explainable AI (XAI)"
+     * becomes
+     * "Explainable AI"
+     *
+     * This mirrors the deterministic
+     * normalization used by the AI service.
+     */
+    normalized = normalized.replace(/\s*\([a-z0-9-]{2,15}\)\s*$/, '');
+
+    normalized = normalized.replace(/&/g, ' and ');
+
+    normalized = normalized.replace(/[-_/]+/g, ' ');
+
+    normalized = normalized.replace(/[^a-z0-9\s]/g, '');
+
+    normalized = normalized.replace(/\s+/g, ' ');
+
+    return normalized.trim();
   }
 }
