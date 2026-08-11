@@ -172,11 +172,6 @@ class CuratedConceptPlan(BaseModel):
         max_length=120,
     )
 
-    description: str = Field(
-        min_length=10,
-        max_length=600,
-    )
-
     importance: int = Field(
         ge=1,
         le=5,
@@ -217,22 +212,6 @@ class CuratedConceptPlan(BaseModel):
             raise ValueError(
                 "Curated concept name "
                 "cannot be empty",
-            )
-
-        return cleaned
-
-    @field_validator("description")
-    @classmethod
-    def clean_description(
-        cls,
-        value: str,
-    ) -> str:
-        cleaned = value.strip()
-
-        if len(cleaned) < 10:
-            raise ValueError(
-                "Curated concept description "
-                "is too short",
             )
 
         return cleaned

@@ -32,7 +32,12 @@ class OllamaLlmProvider(LlmProvider):
             self.DEFAULT_MODEL,
         )
 
-        self._timeout_seconds = 180.0
+        self._timeout = httpx.Timeout(
+            connect=10.0,
+            read=600.0,
+            write=60.0,
+            pool=10.0,
+        )
 
     @property
     def provider_name(self) -> str:
@@ -177,12 +182,6 @@ class OllamaLlmProvider(LlmProvider):
 
             "stream": False,
 
-            # Concept extraction does not need
-            # an explicit reasoning trace.
-            #
-            # Disabling thinking leaves more of
-            # the generation budget available for
-            # the final schema-constrained JSON.
             "think": False,
 
             "format": schema,
@@ -191,21 +190,13 @@ class OllamaLlmProvider(LlmProvider):
 
             "options": {
                 "temperature": 0,
-
-                # Ollama previously allocated a
-                # 4096-token context on this machine.
-                #
-                # Real StudyLoop batches contain
-                # multiple document chunks plus the
-                # system prompt and JSON schema, so
-                # provide a larger context budget.
                 "num_ctx": 8192,
             },
         }
 
         try:
             async with httpx.AsyncClient(
-                timeout=self._timeout_seconds,
+                timeout=self._timeout,
             ) as client:
                 response = await client.post(
                     f"{self._base_url}/api/chat",
@@ -214,11 +205,34 @@ class OllamaLlmProvider(LlmProvider):
 
                 response.raise_for_status()
 
+        except httpx.TimeoutException as error:
+            error_name = type(error).__name__
+
+            error_detail = (
+                str(error).strip()
+                or repr(error)
+            )
+
+            raise LlmProviderError(
+                "Ollama request timed out at "
+                f"{self._base_url}. "
+                f"{error_name}: "
+                f"{error_detail}"
+            ) from error
+
         except httpx.HTTPError as error:
+            error_name = type(error).__name__
+
+            error_detail = (
+                str(error).strip()
+                or repr(error)
+            )
+
             raise LlmProviderError(
                 "Failed to communicate with "
-                f"Ollama at {self._base_url}: "
-                f"{error}"
+                f"Ollama at {self._base_url}. "
+                f"{error_name}: "
+                f"{error_detail}"
             ) from error
 
         try:
