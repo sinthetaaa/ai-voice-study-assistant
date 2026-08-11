@@ -10,8 +10,12 @@ from app.llm.provider import (
     LlmProvider,
 )
 
+from .consolidation_service import (
+    ConceptConsolidationService,
+)
 from .models import (
     ConceptCandidate,
+    ConceptDifficulty,
     ConceptExtractionResult,
     SourceChunk,
 )
@@ -20,7 +24,10 @@ from .models import (
 class ConceptExtractionService:
     BATCH_SIZE = 6
 
-    DIFFICULTY_RANK = {
+    DIFFICULTY_RANK: dict[
+        ConceptDifficulty,
+        int,
+    ] = {
         "FOUNDATIONAL": 1,
         "INTERMEDIATE": 2,
         "ADVANCED": 3,
@@ -93,10 +100,22 @@ Bad:
     def __init__(
         self,
         llm_provider: LlmProvider | None = None,
+        consolidation_service:
+            ConceptConsolidationService
+            | None = None,
     ) -> None:
         self._llm_provider = (
             llm_provider
             or get_llm_provider()
+        )
+
+        self._consolidation_service = (
+            consolidation_service
+            or ConceptConsolidationService(
+                llm_provider=(
+                    self._llm_provider
+                ),
+            )
         )
 
     async def extract(
@@ -138,12 +157,24 @@ Bad:
                 validated,
             )
 
-        merged = self._merge_duplicates(
-            extracted,
+        lexically_merged = (
+            self._merge_duplicates(
+                extracted,
+            )
+        )
+
+        semantically_consolidated = (
+            await self
+            ._consolidation_service
+            .consolidate(
+                lexically_merged,
+            )
         )
 
         return ConceptExtractionResult(
-            concepts=merged,
+            concepts=(
+                semantically_consolidated
+            ),
         )
 
     async def _extract_batch(
@@ -263,6 +294,7 @@ Bad:
                         deep=True,
                     )
                 )
+
                 continue
 
             combined_sources = list(
@@ -380,8 +412,9 @@ Bad:
         first: str,
         second: str,
     ) -> str:
-        # If two names normalize to the same key,
-        # prefer the shorter canonical-looking form.
+        # If two names normalize to the
+        # same key, prefer the shorter
+        # canonical-looking form.
         if len(second) < len(first):
             return second
 
@@ -414,9 +447,9 @@ Bad:
 
     def _higher_difficulty(
         self,
-        first: str,
-        second: str,
-    ) -> str:
+        first: ConceptDifficulty,
+        second: ConceptDifficulty,
+    ) -> ConceptDifficulty:
         if (
             self.DIFFICULTY_RANK[second]
             > self.DIFFICULTY_RANK[first]

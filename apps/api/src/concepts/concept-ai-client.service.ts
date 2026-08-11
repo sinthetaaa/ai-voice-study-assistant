@@ -31,7 +31,7 @@ type ConceptApiResponse = {
 export class ConceptAiClientService implements OnModuleDestroy {
   private readonly logger = new Logger(ConceptAiClientService.name);
 
-  private readonly requestTimeoutMs = 15 * 60 * 1000;
+  private readonly requestTimeoutMs = 30 * 60 * 1000;
 
   private readonly aiDispatcher = new Agent({
     headersTimeout: this.requestTimeoutMs,
