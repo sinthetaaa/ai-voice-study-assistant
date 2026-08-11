@@ -66,19 +66,22 @@ class OllamaLlmProvider(LlmProvider):
             1,
             self.MAX_STRUCTURED_ATTEMPTS + 1,
         ):
-            attempt_messages = list(grounded_messages)
+            attempt_messages = list(
+                grounded_messages,
+            )
 
             if attempt > 1:
                 attempt_messages.append(
                     {
                         "role": "system",
                         "content": (
-                            "Your previous response did not satisfy "
-                            "the required JSON schema. "
-                            "Return ONLY one valid JSON object matching "
-                            "the schema exactly. "
+                            "Your previous response did not produce "
+                            "a valid JSON object matching the required "
+                            "schema. Return ONLY one complete valid JSON "
+                            "object matching the schema exactly. "
                             "Do not return plain text. "
-                            "Do not use Markdown or code fences."
+                            "Do not use Markdown or code fences. "
+                            "Do not include commentary outside the JSON."
                         ),
                     }
                 )
@@ -88,22 +91,49 @@ class OllamaLlmProvider(LlmProvider):
                 schema=schema,
             )
 
-            content = self._extract_content(payload)
+            try:
+                content = self._extract_content(
+                    payload,
+                )
+
+            except LlmProviderError as error:
+                last_error = error
+
+                if (
+                    attempt
+                    < self.MAX_STRUCTURED_ATTEMPTS
+                ):
+                    continue
+
+                break
+
             last_content = content
 
             try:
-                return response_model.model_validate_json(
-                    content,
+                return (
+                    response_model
+                    .model_validate_json(
+                        content,
+                    )
                 )
 
             except ValidationError as error:
                 last_error = error
 
+                if (
+                    attempt
+                    < self.MAX_STRUCTURED_ATTEMPTS
+                ):
+                    continue
+
+                break
+
         raise LlmProviderError(
-            "Ollama failed to return valid structured output "
-            f"after {self.MAX_STRUCTURED_ATTEMPTS} attempts. "
+            "Ollama failed to return valid structured "
+            f"output after "
+            f"{self.MAX_STRUCTURED_ATTEMPTS} attempts. "
             f"Last content: {last_content!r}. "
-            f"Validation error: {last_error}"
+            f"Last error: {last_error}"
         )
 
     def _build_grounded_messages(
@@ -119,10 +149,11 @@ class OllamaLlmProvider(LlmProvider):
         schema_instruction = {
             "role": "system",
             "content": (
-                "You must return ONLY valid JSON matching the "
-                "provided JSON Schema exactly. "
-                "Do not include Markdown, code fences, commentary, "
-                "or text outside the JSON object.\n\n"
+                "You must return ONLY valid JSON matching "
+                "the provided JSON Schema exactly. "
+                "Do not include Markdown, code fences, "
+                "commentary, or text outside the JSON object."
+                "\n\n"
                 "JSON Schema:\n"
                 f"{schema_text}"
             ),
@@ -143,11 +174,32 @@ class OllamaLlmProvider(LlmProvider):
     ) -> dict:
         request_body = {
             "model": self._model,
+
             "stream": False,
+
+            # Concept extraction does not need
+            # an explicit reasoning trace.
+            #
+            # Disabling thinking leaves more of
+            # the generation budget available for
+            # the final schema-constrained JSON.
+            "think": False,
+
             "format": schema,
+
             "messages": messages,
+
             "options": {
                 "temperature": 0,
+
+                # Ollama previously allocated a
+                # 4096-token context on this machine.
+                #
+                # Real StudyLoop batches contain
+                # multiple document chunks plus the
+                # system prompt and JSON schema, so
+                # provide a larger context budget.
+                "num_ctx": 8192,
             },
         }
 
@@ -179,7 +231,8 @@ class OllamaLlmProvider(LlmProvider):
 
         if not isinstance(payload, dict):
             raise LlmProviderError(
-                "Ollama returned an unexpected response payload",
+                "Ollama returned an unexpected "
+                "response payload",
             )
 
         return payload
@@ -188,22 +241,53 @@ class OllamaLlmProvider(LlmProvider):
     def _extract_content(
         payload: dict,
     ) -> str:
-        message = payload.get("message")
+        message = payload.get(
+            "message",
+        )
 
-        if not isinstance(message, dict):
+        if not isinstance(
+            message,
+            dict,
+        ):
             raise LlmProviderError(
                 "Ollama response did not contain "
                 "a message object",
             )
 
-        content = message.get("content")
+        content = message.get(
+            "content",
+        )
 
         if (
-            not isinstance(content, str)
+            not isinstance(
+                content,
+                str,
+            )
             or not content.strip()
         ):
+            thinking = message.get(
+                "thinking",
+            )
+
+            thinking_length = (
+                len(thinking)
+                if isinstance(
+                    thinking,
+                    str,
+                )
+                else 0
+            )
+
             raise LlmProviderError(
-                "Ollama returned empty structured content",
+                "Ollama returned empty structured content. "
+                f"done_reason="
+                f"{payload.get('done_reason')!r}, "
+                f"prompt_eval_count="
+                f"{payload.get('prompt_eval_count')!r}, "
+                f"eval_count="
+                f"{payload.get('eval_count')!r}, "
+                f"thinking_length="
+                f"{thinking_length}"
             )
 
         return content.strip()
