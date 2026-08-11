@@ -190,6 +190,7 @@ class OllamaLlmProvider(LlmProvider):
 
             "options": {
                 "temperature": 0,
+                "seed": 42,
                 "num_ctx": 8192,
             },
         }
