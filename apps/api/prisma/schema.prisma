@@ -15,6 +15,7 @@ model StudyPack {
   goal        String?
 
   documents Document[]
+  concepts  Concept[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -92,10 +93,79 @@ model DocumentChunk {
   embeddingModel    String?
   embeddedAt        DateTime?
 
+  conceptSources ConceptSource[]
+
   createdAt DateTime @default(now())
 
   @@unique([unitId, chunkIndex])
   @@index([unitId])
+}
+
+model Concept {
+  id String @id @default(uuid())
+
+  studyPackId String
+  studyPack   StudyPack @relation(fields: [studyPackId], references: [id], onDelete: Cascade)
+
+  name           String
+  normalizedName String
+
+  description String @db.Text
+
+  importance Int @default(3)
+
+  difficulty ConceptDifficulty @default(INTERMEDIATE)
+
+  sources ConceptSource[]
+
+  outgoingRelationships ConceptRelationship[] @relation("ConceptRelationshipSource")
+  incomingRelationships ConceptRelationship[] @relation("ConceptRelationshipTarget")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([studyPackId, normalizedName])
+  @@index([studyPackId])
+}
+
+model ConceptSource {
+  id String @id @default(uuid())
+
+  conceptId String
+  concept   Concept @relation(fields: [conceptId], references: [id], onDelete: Cascade)
+
+  chunkId String
+  chunk   DocumentChunk @relation(fields: [chunkId], references: [id], onDelete: Cascade)
+
+  relevance Float @default(1.0)
+
+  createdAt DateTime @default(now())
+
+  @@unique([conceptId, chunkId])
+  @@index([conceptId])
+  @@index([chunkId])
+}
+
+model ConceptRelationship {
+  id String @id @default(uuid())
+
+  sourceConceptId String
+  sourceConcept   Concept @relation("ConceptRelationshipSource", fields: [sourceConceptId], references: [id], onDelete: Cascade)
+
+  targetConceptId String
+  targetConcept   Concept @relation("ConceptRelationshipTarget", fields: [targetConceptId], references: [id], onDelete: Cascade)
+
+  type ConceptRelationshipType
+
+  strength Float @default(1.0)
+
+  reason String? @db.Text
+
+  createdAt DateTime @default(now())
+
+  @@unique([sourceConceptId, targetConceptId, type])
+  @@index([sourceConceptId])
+  @@index([targetConceptId])
 }
 
 enum DocumentStatus {
@@ -103,4 +173,16 @@ enum DocumentStatus {
   PROCESSING
   READY
   FAILED
+}
+
+enum ConceptDifficulty {
+  FOUNDATIONAL
+  INTERMEDIATE
+  ADVANCED
+}
+
+enum ConceptRelationshipType {
+  PREREQUISITE
+  BUILDS_ON
+  RELATED_TO
 }
