@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 
+from app.concepts.router import router as concepts_router
 from app.embeddings.router import router as embeddings_router
 from app.ingestion.router import router as ingestion_router
 
@@ -16,6 +17,10 @@ app.include_router(
 
 app.include_router(
     embeddings_router,
+)
+
+app.include_router(
+    concepts_router,
 )
 
 
