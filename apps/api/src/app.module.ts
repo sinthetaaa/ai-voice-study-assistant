@@ -8,6 +8,7 @@ import { ConceptsModule } from './concepts/concepts.module';
 import { DocumentsModule } from './documents/documents.module';
 import { HealthModule } from './health/health.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { QuestionsModule } from './questions/questions.module';
 import { RetrievalModule } from './retrieval/retrieval.module';
 import { StudyPacksModule } from './study-packs/study-packs.module';
 
@@ -29,6 +30,8 @@ import { StudyPacksModule } from './study-packs/study-packs.module';
     RetrievalModule,
 
     ConceptsModule,
+
+    QuestionsModule,
   ],
 
   controllers: [AppController],
