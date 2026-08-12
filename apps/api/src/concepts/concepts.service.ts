@@ -48,6 +48,7 @@ export type ConceptGenerationResult = ConceptPreviewResult & {
 export class ConceptsService {
   constructor(
     private readonly prisma: PrismaService,
+
     private readonly conceptAiClient: ConceptAiClientService,
   ) {}
 
@@ -62,9 +63,13 @@ export class ConceptsService {
 
     return {
       studyPackId,
+
       documentCount: extraction.documentCount,
+
       chunkCount: extraction.chunks.length,
+
       conceptCount: extraction.concepts.length,
+
       concepts: extraction.concepts,
     };
   }
@@ -81,14 +86,17 @@ export class ConceptsService {
     if (extraction.chunks.length === 0) {
       throw new BadRequestException(
         documentId
-          ? `Document ${documentId} has no READY chunks available for concept generation`
-          : `Study Pack ${studyPackId} has no READY chunks available for concept generation`,
+          ? `Document ${documentId} has no READY ` +
+              'chunks available for concept generation'
+          : `Study Pack ${studyPackId} has no READY ` +
+              'chunks available for concept generation',
       );
     }
 
     if (extraction.concepts.length === 0) {
       throw new BadRequestException(
-        'Concept extraction returned no concepts; existing persisted concepts were not modified',
+        'Concept extraction returned no concepts; ' +
+          'existing persisted concepts were not modified',
       );
     }
 
@@ -101,12 +109,19 @@ export class ConceptsService {
 
     return {
       studyPackId,
+
       documentCount: extraction.documentCount,
+
       chunkCount: extraction.chunks.length,
+
       conceptCount: extraction.concepts.length,
+
       concepts: extraction.concepts,
+
       scopeDocumentId: documentId ?? null,
+
       persistedConceptCount: persistenceResult.persistedConceptCount,
+
       persistedSourceCount: persistenceResult.persistedSourceCount,
     };
   }
@@ -127,8 +142,11 @@ export class ConceptsService {
 
     const sourceChunks: ConceptSourceChunk[] = chunks.map((chunk) => ({
       id: chunk.id,
+
       text: chunk.text,
+
       documentName: chunk.documentName,
+
       unitLabel: chunk.unitLabel,
     }));
 
@@ -151,6 +169,7 @@ export class ConceptsService {
       where: {
         id: studyPackId,
       },
+
       select: {
         id: true,
       },
@@ -164,8 +183,10 @@ export class ConceptsService {
       const document = await this.prisma.document.findFirst({
         where: {
           id: documentId,
+
           studyPackId,
         },
+
         select: {
           id: true,
         },
@@ -173,35 +194,36 @@ export class ConceptsService {
 
       if (!document) {
         throw new NotFoundException(
-          `Document ${documentId} was not found in Study Pack ${studyPackId}`,
+          `Document ${documentId} was not found ` +
+            `in Study Pack ${studyPackId}`,
         );
       }
     }
 
     return this.prisma.$queryRaw<ConceptChunkRow[]>`
-      SELECT
-        dc.id AS "id",
-        dc.text AS "text",
-        d.id AS "documentId",
-        d."originalName" AS "documentName",
-        du.label AS "unitLabel"
-      FROM "DocumentChunk" dc
-      INNER JOIN "DocumentUnit" du
-        ON du.id = dc."unitId"
-      INNER JOIN "Document" d
-        ON d.id = du."documentId"
-      WHERE
-        d."studyPackId" = ${studyPackId}
-        AND d.status = 'READY'
-        AND (
-          ${documentId ?? null}::text IS NULL
-          OR d.id = ${documentId ?? null}
-        )
-      ORDER BY
-        d.id,
-        du."unitIndex",
-        dc."chunkIndex"
-    `;
+        SELECT
+          dc.id AS "id",
+          dc.text AS "text",
+          d.id AS "documentId",
+          d."originalName" AS "documentName",
+          du.label AS "unitLabel"
+        FROM "DocumentChunk" dc
+        INNER JOIN "DocumentUnit" du
+          ON du.id = dc."unitId"
+        INNER JOIN "Document" d
+          ON d.id = du."documentId"
+        WHERE
+          d."studyPackId" = ${studyPackId}
+          AND d.status = 'READY'
+          AND (
+            ${documentId ?? null}::text IS NULL
+            OR d.id = ${documentId ?? null}
+          )
+        ORDER BY
+          d.id,
+          du."unitIndex",
+          dc."chunkIndex"
+      `;
   }
 
   private async persistConcepts(
@@ -218,15 +240,25 @@ export class ConceptsService {
     const scopeChunkIds = chunks.map((chunk) => chunk.id);
 
     await this.prisma.$transaction(async (transaction) => {
+      /*
+       * IMPORTANT:
+       *
+       * Concept rows now have stable identity.
+       *
+       * We never delete/recreate the whole
+       * generated concept set merely to refresh
+       * extraction output.
+       *
+       * QuestionAttempt and MasteryEvent history
+       * can depend on these Concept identities.
+       */
+
       if (documentId) {
         /*
          * Document-scoped regeneration:
          *
-         * Remove provenance contributed by the
-         * selected document only.
-         *
-         * Concepts supported by other documents
-         * remain intact.
+         * Remove only provenance contributed by
+         * this document's chunks.
          */
         await transaction.conceptSource.deleteMany({
           where: {
@@ -239,84 +271,79 @@ export class ConceptsService {
         /*
          * Full Study Pack regeneration:
          *
-         * The generated concept set is
-         * authoritative, so replace the existing
-         * concept graph atomically.
+         * The new extraction is authoritative
+         * for ACTIVE provenance, but Concept
+         * identities themselves remain stable.
          *
-         * ConceptSource and relationships cascade
-         * from Concept.
+         * Remove existing ConceptSource rows
+         * instead of deleting Concept rows.
          */
-        await transaction.concept.deleteMany({
+        await transaction.conceptSource.deleteMany({
           where: {
-            studyPackId,
+            concept: {
+              studyPackId,
+            },
           },
         });
       }
 
       for (const concept of preparedConcepts) {
-        let persistedConceptId: string;
-
-        if (documentId) {
-          /*
-           * A concept may already be supported by
-           * another document in this Study Pack.
-           *
-           * Reuse it by normalized identity and
-           * refresh its globally curated fields.
-           */
-          const persistedConcept = await transaction.concept.upsert({
-            where: {
-              studyPackId_normalizedName: {
-                studyPackId,
-                normalizedName: concept.normalizedName,
-              },
-            },
-
-            update: {
-              name: concept.name,
-              description: concept.description,
-              importance: concept.importance,
-              difficulty: concept.difficulty,
-            },
-
-            create: {
+        /*
+         * Always upsert by deterministic
+         * normalized identity.
+         *
+         * This applies to BOTH:
+         *
+         * - document-scoped generation
+         * - full Study Pack generation
+         *
+         * Therefore a surviving concept retains
+         * the same Concept.id.
+         */
+        const persistedConcept = await transaction.concept.upsert({
+          where: {
+            studyPackId_normalizedName: {
               studyPackId,
-              name: concept.name,
+
               normalizedName: concept.normalizedName,
-              description: concept.description,
-              importance: concept.importance,
-              difficulty: concept.difficulty,
             },
+          },
 
-            select: {
-              id: true,
-            },
-          });
+          update: {
+            name: concept.name,
 
-          persistedConceptId = persistedConcept.id;
-        } else {
-          const persistedConcept = await transaction.concept.create({
-            data: {
-              studyPackId,
-              name: concept.name,
-              normalizedName: concept.normalizedName,
-              description: concept.description,
-              importance: concept.importance,
-              difficulty: concept.difficulty,
-            },
+            description: concept.description,
 
-            select: {
-              id: true,
-            },
-          });
+            importance: concept.importance,
 
-          persistedConceptId = persistedConcept.id;
-        }
+            difficulty: concept.difficulty,
+          },
+
+          create: {
+            studyPackId,
+
+            name: concept.name,
+
+            normalizedName: concept.normalizedName,
+
+            description: concept.description,
+
+            importance: concept.importance,
+
+            difficulty: concept.difficulty,
+          },
+
+          select: {
+            id: true,
+          },
+        });
 
         await transaction.conceptSource.createMany({
           data: concept.supportingChunkIds.map((chunkId) => ({
-            conceptId: persistedConceptId,
+            conceptId: persistedConcept.id,
+
             chunkId,
+
             relevance: 1.0,
           })),
 
@@ -324,32 +351,63 @@ export class ConceptsService {
         });
       }
 
-      if (documentId) {
-        /*
-         * A previously persisted concept may have
-         * been supported only by this document and
-         * no longer appear after regeneration.
-         *
-         * Its sources were removed above, so clean
-         * up any resulting orphan concept.
-         */
-        await transaction.concept.deleteMany({
-          where: {
-            studyPackId,
+      /*
+       * Some concepts may no longer appear after
+       * regeneration and therefore have no active
+       * ConceptSource rows.
+       *
+       * Delete them ONLY when doing so cannot
+       * destroy learner history.
+       *
+       * Historical concepts with attempts or
+       * mastery history remain in the database,
+       * even when they are no longer active in
+       * the current extraction.
+       */
+      await transaction.concept.deleteMany({
+        where: {
+          studyPackId,
 
-            sources: {
-              none: {},
+          sources: {
+            none: {},
+          },
+
+          mastery: {
+            is: null,
+          },
+
+          masteryEvents: {
+            none: {},
+          },
+
+          questions: {
+            none: {
+              attempts: {
+                some: {},
+              },
             },
           },
-        });
-      }
+        },
+      });
     });
 
+    /*
+     * Count ACTIVE concepts rather than all
+     * historical Concept rows.
+     *
+     * A historical source-less concept may remain
+     * intentionally because learner history points
+     * to it.
+     */
     const [persistedConceptCount, persistedSourceCount] =
       await this.prisma.$transaction([
         this.prisma.concept.count({
           where: {
             studyPackId,
+
+            sources: {
+              some: {},
+            },
           },
         }),
 
@@ -378,7 +436,8 @@ export class ConceptsService {
 
       if (!normalizedName) {
         throw new BadRequestException(
-          `Concept "${concept.name}" cannot be normalized to a valid persistence key`,
+          `Concept "${concept.name}" cannot be ` +
+            'normalized to a valid persistence key',
         );
       }
 
@@ -386,7 +445,9 @@ export class ConceptsService {
 
       if (previousName) {
         throw new BadRequestException(
-          `Concept persistence received duplicate normalized names: "${previousName}" and "${concept.name}"`,
+          'Concept persistence received duplicate ' +
+            `normalized names: "${previousName}" ` +
+            `and "${concept.name}"`,
         );
       }
 

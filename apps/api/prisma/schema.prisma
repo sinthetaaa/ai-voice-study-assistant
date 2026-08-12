@@ -120,6 +120,9 @@ model Concept {
   sources   ConceptSource[]
   questions Question[]
 
+  mastery       ConceptMastery?
+  masteryEvents MasteryEvent[]
+
   outgoingRelationships ConceptRelationship[] @relation("ConceptRelationshipSource")
   incomingRelationships ConceptRelationship[] @relation("ConceptRelationshipTarget")
 
@@ -220,23 +223,17 @@ model QuestionAttempt {
   questionId String
   question   Question @relation(fields: [questionId], references: [id], onDelete: Restrict)
 
-  /**
-   * Snapshot the exact question the learner
-   * answered.
-   * The live Question row may later be updated
-   * during question regeneration, but historical
-   * attempts must remain interpretable.
-   */
+  // Snapshot the exact question the learner answered.
+  //
+  // The live Question row may later be updated during question
+  // regeneration, but historical attempts must remain interpretable.
   promptSnapshot         String             @db.Text
   expectedAnswerSnapshot String             @db.Text
   questionTypeSnapshot   QuestionType
   difficultySnapshot     QuestionDifficulty
 
-  /**
-   * Snapshot the evidence that was active when
-   * this question was attempted.
-   * Live QuestionSource rows may later change.
-   */
+  // Snapshot the evidence that was active when this question was
+  // attempted. Live QuestionSource rows may later change.
   evidenceChunkIds String[] @default([])
 
   answerText String @db.Text
@@ -255,13 +252,12 @@ model AnswerEvaluation {
   attemptId String          @unique
   attempt   QuestionAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
 
-  /**
-   * Normalized score:
-   * 0.0 = completely incorrect
-   * 1.0 = fully correct
-   * Application validation will enforce
-   * this range.
-   */
+  // Normalized score:
+  //
+  // 0.0 = completely incorrect
+  // 1.0 = fully correct
+  //
+  // Application validation enforces this range.
   score Float
 
   correctness AnswerCorrectness
@@ -271,19 +267,85 @@ model AnswerEvaluation {
   missingPoints  String[] @default([])
   misconceptions String[] @default([])
 
-  /**
-   * Keep evaluator provenance so results remain
-   * auditable if the model or evaluation logic
-   * changes later.
-   */
+  // Keep evaluator provenance so results remain auditable if the
+  // evaluator model or evaluation logic changes later.
   evaluatorProvider String
   evaluatorModel    String
   evaluatorVersion  String @default("v1")
+
+  masteryEvent MasteryEvent?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([correctness])
+  @@index([createdAt])
+}
+
+model ConceptMastery {
+  id String @id @default(uuid())
+
+  conceptId String  @unique
+  concept   Concept @relation(fields: [conceptId], references: [id], onDelete: Cascade)
+
+  // Beta-distribution parameters.
+  //
+  // Beta(1, 1) represents a neutral prior before StudyLoop has
+  // observed any evaluated learner attempts for this concept.
+  alpha Float @default(1.0)
+  beta  Float @default(1.0)
+
+  // Cached posterior mean:
+  //
+  // masteryScore = alpha / (alpha + beta)
+  //
+  // The mastery service is responsible for keeping this value
+  // consistent with alpha and beta.
+  masteryScore Float @default(0.5)
+
+  // Total weighted evidence accumulated from evaluated attempts.
+  evidenceWeight Float @default(0.0)
+
+  attemptCount Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([masteryScore])
+  @@index([updatedAt])
+}
+
+model MasteryEvent {
+  id String @id @default(uuid())
+
+  conceptId String
+  concept   Concept @relation(fields: [conceptId], references: [id], onDelete: Restrict)
+
+  // Every AnswerEvaluation may affect mastery at most once.
+  //
+  // The unique evaluationId is the idempotency guarantee for
+  // mastery updates.
+  evaluationId String           @unique
+  evaluation   AnswerEvaluation @relation(fields: [evaluationId], references: [id], onDelete: Restrict)
+
+  // Evaluation signal used for this update.
+  score  Float
+  weight Float
+
+  // Complete before/after state makes every mastery transition
+  // independently auditable.
+  alphaBefore Float
+  betaBefore  Float
+
+  alphaAfter Float
+  betaAfter  Float
+
+  masteryBefore Float
+  masteryAfter  Float
+
+  createdAt DateTime @default(now())
+
+  @@index([conceptId])
   @@index([createdAt])
 }
 
