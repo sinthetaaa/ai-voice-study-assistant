@@ -11,6 +11,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { QuestionsModule } from './questions/questions.module';
 import { RetrievalModule } from './retrieval/retrieval.module';
 import { StudyPacksModule } from './study-packs/study-packs.module';
+import { EvaluationsModule } from './evaluations/evaluations.module';
 
 @Module({
   imports: [
@@ -32,6 +33,8 @@ import { StudyPacksModule } from './study-packs/study-packs.module';
     ConceptsModule,
 
     QuestionsModule,
+
+    EvaluationsModule,
   ],
 
   controllers: [AppController],
