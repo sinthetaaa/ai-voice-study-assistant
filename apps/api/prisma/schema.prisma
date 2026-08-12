@@ -93,7 +93,8 @@ model DocumentChunk {
   embeddingModel    String?
   embeddedAt        DateTime?
 
-  conceptSources ConceptSource[]
+  conceptSources  ConceptSource[]
+  questionSources QuestionSource[]
 
   createdAt DateTime @default(now())
 
@@ -116,7 +117,8 @@ model Concept {
 
   difficulty ConceptDifficulty @default(INTERMEDIATE)
 
-  sources ConceptSource[]
+  sources   ConceptSource[]
+  questions Question[]
 
   outgoingRelationships ConceptRelationship[] @relation("ConceptRelationshipSource")
   incomingRelationships ConceptRelationship[] @relation("ConceptRelationshipTarget")
@@ -168,6 +170,48 @@ model ConceptRelationship {
   @@index([targetConceptId])
 }
 
+model Question {
+  id String @id @default(uuid())
+
+  conceptId String
+  concept   Concept @relation(fields: [conceptId], references: [id], onDelete: Cascade)
+
+  type QuestionType
+
+  difficulty QuestionDifficulty @default(MEDIUM)
+
+  prompt String @db.Text
+
+  expectedAnswer String @db.Text
+
+  sources QuestionSource[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([conceptId])
+  @@index([type])
+  @@index([difficulty])
+}
+
+model QuestionSource {
+  id String @id @default(uuid())
+
+  questionId String
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  chunkId String
+  chunk   DocumentChunk @relation(fields: [chunkId], references: [id], onDelete: Cascade)
+
+  relevance Float @default(1.0)
+
+  createdAt DateTime @default(now())
+
+  @@unique([questionId, chunkId])
+  @@index([questionId])
+  @@index([chunkId])
+}
+
 enum DocumentStatus {
   UPLOADED
   PROCESSING
@@ -185,4 +229,16 @@ enum ConceptRelationshipType {
   PREREQUISITE
   BUILDS_ON
   RELATED_TO
+}
+
+enum QuestionType {
+  RECALL
+  UNDERSTANDING
+  APPLICATION
+}
+
+enum QuestionDifficulty {
+  EASY
+  MEDIUM
+  HARD
 }

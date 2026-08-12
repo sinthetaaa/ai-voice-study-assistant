@@ -1,6 +1,7 @@
 import json
 import os
 from functools import lru_cache
+from typing import Any
 
 import httpx
 from pydantic import ValidationError
@@ -177,7 +178,7 @@ class OllamaLlmProvider(LlmProvider):
         messages: list[dict[str, str]],
         schema: dict,
     ) -> dict:
-        request_body = {
+        request_body: dict[str, Any] = {
             "model": self._model,
 
             "stream": False,
@@ -204,6 +205,22 @@ class OllamaLlmProvider(LlmProvider):
                     json=request_body,
                 )
 
+                if (
+                    response.status_code == 400
+                    and self._is_grammar_error(
+                        response,
+                    )
+                ):
+                    fallback_body = {
+                        **request_body,
+                        "format": "json",
+                    }
+
+                    response = await client.post(
+                        f"{self._base_url}/api/chat",
+                        json=fallback_body,
+                    )
+
                 response.raise_for_status()
 
         except httpx.TimeoutException as error:
@@ -219,6 +236,24 @@ class OllamaLlmProvider(LlmProvider):
                 f"{self._base_url}. "
                 f"{error_name}: "
                 f"{error_detail}"
+            ) from error
+
+        except httpx.HTTPStatusError as error:
+            status_code = (
+                error.response.status_code
+            )
+
+            response_detail = (
+                self._get_response_detail(
+                    error.response,
+                )
+            )
+
+            raise LlmProviderError(
+                "Ollama rejected the request. "
+                f"HTTP {status_code} at "
+                f"{self._base_url}/api/chat. "
+                f"Response: {response_detail}"
             ) from error
 
         except httpx.HTTPError as error:
@@ -251,6 +286,40 @@ class OllamaLlmProvider(LlmProvider):
             )
 
         return payload
+
+    @staticmethod
+    def _get_response_detail(
+        response: httpx.Response,
+    ) -> Any:
+        try:
+            return response.json()
+
+        except ValueError:
+            return response.text
+
+    @classmethod
+    def _is_grammar_error(
+        cls,
+        response: httpx.Response,
+    ) -> bool:
+        response_detail = (
+            cls._get_response_detail(
+                response,
+            )
+        )
+
+        error_text = (
+            str(response_detail)
+            .lower()
+        )
+
+        return (
+            "failed to parse grammar"
+            in error_text
+            or
+            "failed to initialize samplers"
+            in error_text
+        )
 
     @staticmethod
     def _extract_content(
