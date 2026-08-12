@@ -201,29 +201,29 @@ export class ConceptsService {
     }
 
     return this.prisma.$queryRaw<ConceptChunkRow[]>`
-        SELECT
-          dc.id AS "id",
-          dc.text AS "text",
-          d.id AS "documentId",
-          d."originalName" AS "documentName",
-          du.label AS "unitLabel"
-        FROM "DocumentChunk" dc
-        INNER JOIN "DocumentUnit" du
-          ON du.id = dc."unitId"
-        INNER JOIN "Document" d
-          ON d.id = du."documentId"
-        WHERE
-          d."studyPackId" = ${studyPackId}
-          AND d.status = 'READY'
-          AND (
-            ${documentId ?? null}::text IS NULL
-            OR d.id = ${documentId ?? null}
-          )
-        ORDER BY
-          d.id,
-          du."unitIndex",
-          dc."chunkIndex"
-      `;
+      SELECT
+        dc.id AS "id",
+        dc.text AS "text",
+        d.id AS "documentId",
+        d."originalName" AS "documentName",
+        du.label AS "unitLabel"
+      FROM "DocumentChunk" dc
+      INNER JOIN "DocumentUnit" du
+        ON du.id = dc."unitId"
+      INNER JOIN "Document" d
+        ON d.id = du."documentId"
+      WHERE
+        d."studyPackId" = ${studyPackId}
+        AND d.status = 'READY'
+        AND (
+          ${documentId ?? null}::text IS NULL
+          OR d.id = ${documentId ?? null}
+        )
+      ORDER BY
+        d.id,
+        du."unitIndex",
+        dc."chunkIndex"
+    `;
   }
 
   private async persistConcepts(
@@ -357,12 +357,12 @@ export class ConceptsService {
        * ConceptSource rows.
        *
        * Delete them ONLY when doing so cannot
-       * destroy learner history.
+       * destroy learner or session history.
        *
-       * Historical concepts with attempts or
-       * mastery history remain in the database,
-       * even when they are no longer active in
-       * the current extraction.
+       * Historical concepts with attempts,
+       * mastery history, or StudySession history
+       * remain in the database even when they are
+       * no longer active in the current extraction.
        */
       await transaction.concept.deleteMany({
         where: {
@@ -387,6 +387,29 @@ export class ConceptsService {
               },
             },
           },
+
+          /*
+           * A concept referenced by any
+           * SessionConceptProgress row is part of
+           * historical session state and must keep
+           * its stable identity.
+           */
+          sessionProgress: {
+            none: {},
+          },
+
+          /*
+           * Protect the StudySession.currentConcept
+           * relation independently as well.
+           *
+           * Normally sessionProgress should already
+           * cover this, but this keeps deletion safe
+           * even if session data becomes partially
+           * inconsistent.
+           */
+          currentInSessions: {
+            none: {},
+          },
         },
       });
     });
@@ -396,8 +419,8 @@ export class ConceptsService {
      * historical Concept rows.
      *
      * A historical source-less concept may remain
-     * intentionally because learner history points
-     * to it.
+     * intentionally because learner or session
+     * history points to it.
      */
     const [persistedConceptCount, persistedSourceCount] =
       await this.prisma.$transaction([
