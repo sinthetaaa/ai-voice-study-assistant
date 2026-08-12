@@ -12,6 +12,7 @@ import { QuestionsModule } from './questions/questions.module';
 import { RetrievalModule } from './retrieval/retrieval.module';
 import { StudyPacksModule } from './study-packs/study-packs.module';
 import { EvaluationsModule } from './evaluations/evaluations.module';
+import { MasteryModule } from './mastery/mastery.module';
 
 @Module({
   imports: [
@@ -35,6 +36,8 @@ import { EvaluationsModule } from './evaluations/evaluations.module';
     QuestionsModule,
 
     EvaluationsModule,
+
+    MasteryModule,
   ],
 
   controllers: [AppController],
