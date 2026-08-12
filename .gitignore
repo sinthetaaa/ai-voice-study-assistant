@@ -38,3 +38,6 @@ logs/
 # Local databases
 *.db
 *.sqlite
+# Generated Prisma client
+/apps/api/generated/
+/apps/api/src/generated/
