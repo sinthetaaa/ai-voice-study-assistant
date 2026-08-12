@@ -14,6 +14,7 @@ import { StudyPacksModule } from './study-packs/study-packs.module';
 import { EvaluationsModule } from './evaluations/evaluations.module';
 import { MasteryModule } from './mastery/mastery.module';
 import { AdaptiveModule } from './adaptive/adaptive.module';
+import { RemediationModule } from './remediation/remediation.module';
 
 @Module({
   imports: [
@@ -41,6 +42,8 @@ import { AdaptiveModule } from './adaptive/adaptive.module';
     MasteryModule,
 
     AdaptiveModule,
+
+    RemediationModule,
   ],
 
   controllers: [AppController],
