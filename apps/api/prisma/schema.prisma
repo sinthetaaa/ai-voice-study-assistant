@@ -322,10 +322,31 @@ model ConceptMastery {
 
   attemptCount Int @default(0)
 
+  // Persistent delayed-review state.
+  //
+  // A null reviewDueAt means no review is currently scheduled.
+  // Scheduling policy is owned by application code rather than
+  // the mastery calculation itself.
+  reviewDueAt DateTime?
+
+  // Stable question level to use when the scheduled review runs.
+  // When reviewDueAt is non-null, application logic will ensure
+  // reviewQuestionType is also non-null.
+  reviewQuestionType QuestionType?
+
+  // Current spacing interval for the review schedule.
+  //
+  // 0 = no established review interval yet.
+  reviewIntervalDays Int @default(0)
+
+  // Timestamp of the most recently completed scheduled review.
+  lastReviewedAt DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([masteryScore])
+  @@index([reviewDueAt])
   @@index([updatedAt])
 }
 
