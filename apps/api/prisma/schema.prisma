@@ -16,6 +16,7 @@ model StudyPack {
 
   documents Document[]
   concepts  Concept[]
+  sessions  StudySession[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -123,6 +124,9 @@ model Concept {
   mastery       ConceptMastery?
   masteryEvents MasteryEvent[]
 
+  currentInSessions StudySession[]           @relation("StudySessionCurrentConcept")
+  sessionProgress   SessionConceptProgress[]
+
   outgoingRelationships ConceptRelationship[] @relation("ConceptRelationshipSource")
   incomingRelationships ConceptRelationship[] @relation("ConceptRelationshipTarget")
 
@@ -190,6 +194,8 @@ model Question {
   sources  QuestionSource[]
   attempts QuestionAttempt[]
 
+  currentInSessions StudySession[] @relation("StudySessionCurrentQuestion")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -223,6 +229,13 @@ model QuestionAttempt {
   questionId String
   question   Question @relation(fields: [questionId], references: [id], onDelete: Restrict)
 
+  // A QuestionAttempt may optionally belong to a StudySession.
+  //
+  // Existing historical attempts remain valid with studySessionId = null.
+  // New session-aware answer flows will populate this field.
+  studySessionId String?
+  studySession   StudySession? @relation(fields: [studySessionId], references: [id], onDelete: SetNull)
+
   // Snapshot the exact question the learner answered.
   //
   // The live Question row may later be updated during question
@@ -243,6 +256,7 @@ model QuestionAttempt {
   createdAt DateTime @default(now())
 
   @@index([questionId])
+  @@index([studySessionId])
   @@index([createdAt])
 }
 
@@ -349,6 +363,70 @@ model MasteryEvent {
   @@index([createdAt])
 }
 
+model StudySession {
+  id String @id @default(uuid())
+
+  studyPackId String
+  studyPack   StudyPack @relation(fields: [studyPackId], references: [id], onDelete: Cascade)
+
+  status StudySessionStatus @default(ACTIVE)
+
+  // The concept and question currently presented to the learner.
+  //
+  // Both become null when the session is complete.
+  currentConceptId String?
+  currentConcept   Concept? @relation("StudySessionCurrentConcept", fields: [currentConceptId], references: [id], onDelete: SetNull)
+
+  currentQuestionId String?
+  currentQuestion   Question? @relation("StudySessionCurrentQuestion", fields: [currentQuestionId], references: [id], onDelete: SetNull)
+
+  // Snapshot concept ordering when the session starts.
+  conceptProgress SessionConceptProgress[]
+
+  attempts QuestionAttempt[]
+
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+  updatedAt   DateTime  @updatedAt
+
+  @@index([studyPackId])
+  @@index([status])
+  @@index([currentConceptId])
+  @@index([currentQuestionId])
+  @@index([startedAt])
+}
+
+model SessionConceptProgress {
+  id String @id @default(uuid())
+
+  sessionId String
+  session   StudySession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  conceptId String
+  concept   Concept @relation(fields: [conceptId], references: [id], onDelete: Restrict)
+
+  // Stable concept order captured when the session starts.
+  position Int
+
+  status SessionConceptStatus @default(PENDING)
+
+  // ADVANCE_WITH_REVIEW can allow normal progression while preserving
+  // the fact that this concept should be revisited later.
+  reviewRequired Boolean @default(false)
+
+  startedAt   DateTime?
+  completedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([sessionId, conceptId])
+  @@unique([sessionId, position])
+  @@index([sessionId])
+  @@index([conceptId])
+  @@index([status])
+}
+
 enum DocumentStatus {
   UPLOADED
   PROCESSING
@@ -384,4 +462,17 @@ enum AnswerCorrectness {
   CORRECT
   PARTIAL
   INCORRECT
+}
+
+enum StudySessionStatus {
+  ACTIVE
+  COMPLETED
+  ABANDONED
+}
+
+enum SessionConceptStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  REVIEW_REQUIRED
 }
