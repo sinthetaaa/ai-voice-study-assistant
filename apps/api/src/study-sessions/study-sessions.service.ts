@@ -14,6 +14,7 @@ import {
   LearningLoopService,
 } from '../learning-loop/learning-loop.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { QuestionsService } from '../questions/questions.service';
 
 import { classifyStudyReadiness } from './study-session-readiness';
 
@@ -90,7 +91,7 @@ export type StudySessionAnswerResult = {
   session: StudySessionStateResult;
 };
 
-type SessionReadyConcept = {
+type SessionPlanConcept = {
   id: string;
 
   name: string;
@@ -106,22 +107,20 @@ type SessionReadyConcept = {
     evidenceWeight: number;
     attemptCount: number;
   } | null;
+};
 
-  questions: {
-    id: string;
-
-    type: 'RECALL' | 'UNDERSTANDING' | 'APPLICATION';
-
-    difficulty: 'EASY' | 'MEDIUM' | 'HARD';
-
-    prompt: string;
-  }[];
+type PreparedSessionConcept = SessionPlanConcept & {
+  questions: StudySessionQuestion[];
 };
 
 @Injectable()
 export class StudySessionsService {
+  private static readonly NORMAL_SESSION_CONCEPT_LIMIT = 3;
+
   constructor(
     private readonly prisma: PrismaService,
+
+    private readonly questionsService: QuestionsService,
 
     private readonly evaluationsService: EvaluationsService,
 
@@ -144,9 +143,15 @@ export class StudySessionsService {
     }
 
     /*
-     * A session begins only with currently active
-     * concepts that have a persisted RECALL
-     * question backed by READY provenance.
+     * Session planning starts from ALL currently
+     * active concepts.
+     *
+     * Question readiness is intentionally NOT a
+     * filter here anymore.
+     *
+     * Missing question sets are prepared lazily
+     * only for concepts selected into this
+     * bounded session batch.
      */
     const concepts = await this.prisma.concept.findMany({
       where: {
@@ -158,24 +163,6 @@ export class StudySessionsService {
               unit: {
                 document: {
                   status: 'READY',
-                },
-              },
-            },
-          },
-        },
-
-        questions: {
-          some: {
-            type: 'RECALL',
-
-            sources: {
-              some: {
-                chunk: {
-                  unit: {
-                    document: {
-                      status: 'READY',
-                    },
-                  },
                 },
               },
             },
@@ -203,80 +190,22 @@ export class StudySessionsService {
             attemptCount: true,
           },
         },
-
-        questions: {
-          where: {
-            type: 'RECALL',
-
-            sources: {
-              some: {
-                chunk: {
-                  unit: {
-                    document: {
-                      status: 'READY',
-                    },
-                  },
-                },
-              },
-            },
-          },
-
-          take: 1,
-
-          select: {
-            id: true,
-
-            type: true,
-
-            difficulty: true,
-
-            prompt: true,
-          },
-        },
       },
     });
 
-    const readyConcepts: SessionReadyConcept[] = concepts.filter(
-      (concept): concept is SessionReadyConcept => concept.questions.length > 0,
-    );
-
-    if (readyConcepts.length === 0) {
-      throw new BadRequestException(
-        `Study Pack ${studyPackId} has no ` +
-          'session-ready concepts. At least one ' +
-          'active concept must have a persisted ' +
-          'RECALL question with READY provenance.',
-      );
-    }
-
-    /*
-     * Normal study sessions should not restart
-     * concepts that already satisfy the exact
-     * mastery + evidence thresholds used by the
-     * adaptive policy.
-     *
-     * MASTERED concepts will later be handled by
-     * the dedicated review path.
-     */
-    const studyConcepts = readyConcepts.filter(
+    const studyConcepts: SessionPlanConcept[] = concepts.filter(
       (concept) => classifyStudyReadiness(concept.mastery).needsNormalStudy,
     );
 
     if (studyConcepts.length === 0) {
       throw new BadRequestException(
         `Study Pack ${studyPackId} has no ` +
-          'session-ready concepts requiring ' +
-          'normal study. All currently ' +
-          'session-ready concepts already meet ' +
-          'the mastery and evidence thresholds.',
+          'active concepts requiring normal study.',
       );
     }
 
     /*
-     * Freeze concept ordering when the session
-     * begins.
-     *
-     * Priority:
+     * Deterministic global priority:
      *
      * 1. higher importance
      * 2. easier conceptual difficulty
@@ -306,10 +235,66 @@ export class StudySessionsService {
       return left.id.localeCompare(right.id);
     });
 
-    const firstConcept = orderedConcepts[0];
+    /*
+     * A normal session owns only a bounded
+     * concept batch.
+     *
+     * This prevents POST /sessions from
+     * triggering question generation for an
+     * entire large Study Pack.
+     */
+    const selectedConcepts = orderedConcepts.slice(
+      0,
+      StudySessionsService.NORMAL_SESSION_CONCEPT_LIMIT,
+    );
 
-    const firstQuestion = firstConcept.questions[0];
+    const preparedConcepts: PreparedSessionConcept[] = [];
 
+    /*
+     * Prepare sequentially.
+     *
+     * Local LLM generation is intentionally not
+     * parallelized because concurrent generation
+     * would increase resource contention without
+     * improving session correctness.
+     *
+     * QuestionsService itself preserves stable
+     * (conceptId, type) identities.
+     */
+    for (const concept of selectedConcepts) {
+      const questions = await this.ensureConceptQuestionSet(
+        studyPackId,
+        concept.id,
+      );
+
+      preparedConcepts.push({
+        ...concept,
+
+        questions,
+      });
+    }
+
+    const firstConcept = preparedConcepts[0];
+
+    const firstQuestion = firstConcept.questions.find(
+      (question) => question.type === 'RECALL',
+    );
+
+    if (!firstQuestion) {
+      throw new InternalServerErrorException(
+        `Prepared concept ${firstConcept.id} ` +
+          'does not contain a READY RECALL question',
+      );
+    }
+
+    /*
+     * Only after every selected concept has a
+     * complete READY-backed question set do we
+     * create the persistent session snapshot.
+     *
+     * Therefore a generation failure cannot
+     * create a half-prepared StudySession.
+     */
     const session = await this.prisma.$transaction(async (transaction) => {
       const createdSession = await transaction.studySession.create({
         data: {
@@ -330,7 +315,7 @@ export class StudySessionsService {
       });
 
       await transaction.sessionConceptProgress.createMany({
-        data: orderedConcepts.map((concept, position) => ({
+        data: preparedConcepts.map((concept, position) => ({
           sessionId: createdSession.id,
 
           conceptId: concept.id,
@@ -378,6 +363,109 @@ export class StudySessionsService {
 
       currentQuestion: state.currentQuestion,
     };
+  }
+
+  private async ensureConceptQuestionSet(
+    studyPackId: string,
+    conceptId: string,
+  ): Promise<StudySessionQuestion[]> {
+    const requiredQuestionTypes: StudySessionQuestion['type'][] = [
+      'RECALL',
+      'UNDERSTANDING',
+      'APPLICATION',
+    ];
+
+    let questions = await this.loadReadyConceptQuestions(
+      studyPackId,
+      conceptId,
+    );
+
+    const existingTypes = new Set(questions.map((question) => question.type));
+
+    const missingTypes = requiredQuestionTypes.filter(
+      (type) => !existingTypes.has(type),
+    );
+
+    /*
+     * Generate only when the concept does not
+     * already have the complete three-level
+     * READY-backed question set.
+     *
+     * QuestionsService upserts stable question
+     * slots, so partially prepared concepts are
+     * safely repaired rather than duplicated.
+     */
+    if (missingTypes.length > 0) {
+      await this.questionsService.generateConceptQuestions(
+        studyPackId,
+        conceptId,
+      );
+
+      questions = await this.loadReadyConceptQuestions(studyPackId, conceptId);
+    }
+
+    const finalTypes = new Set(questions.map((question) => question.type));
+
+    const stillMissing = requiredQuestionTypes.filter(
+      (type) => !finalTypes.has(type),
+    );
+
+    if (stillMissing.length > 0) {
+      throw new InternalServerErrorException(
+        `Concept ${conceptId} question ` +
+          `preparation completed without READY ` +
+          `question types: ${stillMissing.join(', ')}`,
+      );
+    }
+
+    return questions;
+  }
+
+  private async loadReadyConceptQuestions(
+    studyPackId: string,
+    conceptId: string,
+  ): Promise<StudySessionQuestion[]> {
+    const questions = await this.prisma.question.findMany({
+      where: {
+        conceptId,
+
+        concept: {
+          studyPackId,
+        },
+
+        sources: {
+          some: {
+            chunk: {
+              unit: {
+                document: {
+                  status: 'READY',
+                },
+              },
+            },
+          },
+        },
+      },
+
+      select: {
+        id: true,
+
+        type: true,
+
+        difficulty: true,
+
+        prompt: true,
+      },
+    });
+
+    return questions.map((question) => ({
+      id: question.id,
+
+      type: question.type,
+
+      difficulty: question.difficulty,
+
+      prompt: question.prompt,
+    }));
   }
 
   async answerSession(
