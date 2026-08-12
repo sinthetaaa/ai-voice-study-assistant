@@ -15,6 +15,9 @@ from app.ingestion.router import (
 from app.questions.router import (
     router as questions_router,
 )
+from app.remediation.router import (
+    router as remediation_router,
+)
 
 
 app = FastAPI(
@@ -41,6 +44,10 @@ app.include_router(
 
 app.include_router(
     evaluations_router,
+)
+
+app.include_router(
+    remediation_router,
 )
 
 
