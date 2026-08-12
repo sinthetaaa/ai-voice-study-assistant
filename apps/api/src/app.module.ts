@@ -4,17 +4,18 @@ import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 
+import { AdaptiveModule } from './adaptive/adaptive.module';
 import { ConceptsModule } from './concepts/concepts.module';
 import { DocumentsModule } from './documents/documents.module';
+import { EvaluationsModule } from './evaluations/evaluations.module';
 import { HealthModule } from './health/health.module';
+import { LearningLoopModule } from './learning-loop/learning-loop.module';
+import { MasteryModule } from './mastery/mastery.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { QuestionsModule } from './questions/questions.module';
+import { RemediationModule } from './remediation/remediation.module';
 import { RetrievalModule } from './retrieval/retrieval.module';
 import { StudyPacksModule } from './study-packs/study-packs.module';
-import { EvaluationsModule } from './evaluations/evaluations.module';
-import { MasteryModule } from './mastery/mastery.module';
-import { AdaptiveModule } from './adaptive/adaptive.module';
-import { RemediationModule } from './remediation/remediation.module';
 
 @Module({
   imports: [
@@ -44,6 +45,8 @@ import { RemediationModule } from './remediation/remediation.module';
     AdaptiveModule,
 
     RemediationModule,
+
+    LearningLoopModule,
   ],
 
   controllers: [AppController],
