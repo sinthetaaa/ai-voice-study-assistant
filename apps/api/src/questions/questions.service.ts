@@ -70,9 +70,9 @@ export class QuestionsService {
      * Generate and validate everything BEFORE
      * modifying persisted questions.
      *
-     * If the AI service fails or returns an
-     * invalid result, existing questions remain
-     * untouched.
+     * If the AI service fails or returns invalid
+     * output, the currently persisted question
+     * set remains untouched.
      */
     const generation = await this.generateQuestionBundle(
       studyPackId,
@@ -174,12 +174,12 @@ export class QuestionsService {
     );
 
     /*
-     * Revalidate provenance immediately before
-     * persistence.
+     * Revalidate provenance directly at the
+     * persistence boundary.
      *
-     * QuestionAiClientService already validates
-     * these IDs, but the persistence boundary
-     * should not blindly trust upstream data.
+     * The AI client already performs this check,
+     * but persisted provenance should never rely
+     * solely on upstream validation.
      */
     for (const question of questions) {
       if (question.evidenceChunkIds.length === 0) {
@@ -200,26 +200,62 @@ export class QuestionsService {
       }
     }
 
-    await this.prisma.$transaction(async (transaction) => {
-      /*
-       * Question generation for one concept
-       * is authoritative.
-       *
-       * Replace that concept's existing
-       * question set atomically.
-       *
-       * QuestionSource rows cascade from
-       * Question.
-       */
-      await transaction.question.deleteMany({
-        where: {
-          conceptId: concept.id,
-        },
-      });
+    /*
+     * Also protect the stable identity invariant:
+     *
+     * one persisted question per
+     * (conceptId, questionType).
+     */
+    const seenTypes = new Set<string>();
 
+    for (const question of questions) {
+      if (seenTypes.has(question.type)) {
+        throw new BadRequestException(
+          `Question persistence received ` + `duplicate type ${question.type}`,
+        );
+      }
+
+      seenTypes.add(question.type);
+    }
+
+    await this.prisma.$transaction(async (transaction) => {
       for (const question of questions) {
-        const persistedQuestion = await transaction.question.create({
-          data: {
+        /*
+         * IMPORTANT:
+         *
+         * Do not delete/recreate Question rows.
+         *
+         * QuestionAttempt points to Question
+         * with ON DELETE RESTRICT, and historical
+         * learner attempts must retain a stable
+         * question identity.
+         *
+         * The composite unique key:
+         *
+         * (conceptId, type)
+         *
+         * gives each concept exactly one stable
+         * RECALL, UNDERSTANDING and APPLICATION
+         * question slot.
+         */
+        const persistedQuestion = await transaction.question.upsert({
+          where: {
+            conceptId_type: {
+              conceptId: concept.id,
+
+              type: question.type,
+            },
+          },
+
+          update: {
+            difficulty: question.difficulty,
+
+            prompt: question.prompt,
+
+            expectedAnswer: question.expectedAnswer,
+          },
+
+          create: {
             conceptId: concept.id,
 
             type: question.type,
@@ -233,6 +269,21 @@ export class QuestionsService {
 
           select: {
             id: true,
+          },
+        });
+
+        /*
+         * The Question row stays stable, but
+         * provenance should represent the latest
+         * generated version of that question.
+         *
+         * Historical attempts already snapshot
+         * the evidenceChunkIds that existed at
+         * the moment the learner answered.
+         */
+        await transaction.questionSource.deleteMany({
+          where: {
+            questionId: persistedQuestion.id,
           },
         });
 

@@ -184,11 +184,13 @@ model Question {
 
   expectedAnswer String @db.Text
 
-  sources QuestionSource[]
+  sources  QuestionSource[]
+  attempts QuestionAttempt[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@unique([conceptId, type])
   @@index([conceptId])
   @@index([type])
   @@index([difficulty])
@@ -210,6 +212,79 @@ model QuestionSource {
   @@unique([questionId, chunkId])
   @@index([questionId])
   @@index([chunkId])
+}
+
+model QuestionAttempt {
+  id String @id @default(uuid())
+
+  questionId String
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Restrict)
+
+  /**
+   * Snapshot the exact question the learner
+   * answered.
+   * The live Question row may later be updated
+   * during question regeneration, but historical
+   * attempts must remain interpretable.
+   */
+  promptSnapshot         String             @db.Text
+  expectedAnswerSnapshot String             @db.Text
+  questionTypeSnapshot   QuestionType
+  difficultySnapshot     QuestionDifficulty
+
+  /**
+   * Snapshot the evidence that was active when
+   * this question was attempted.
+   * Live QuestionSource rows may later change.
+   */
+  evidenceChunkIds String[] @default([])
+
+  answerText String @db.Text
+
+  evaluation AnswerEvaluation?
+
+  createdAt DateTime @default(now())
+
+  @@index([questionId])
+  @@index([createdAt])
+}
+
+model AnswerEvaluation {
+  id String @id @default(uuid())
+
+  attemptId String          @unique
+  attempt   QuestionAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+
+  /**
+   * Normalized score:
+   * 0.0 = completely incorrect
+   * 1.0 = fully correct
+   * Application validation will enforce
+   * this range.
+   */
+  score Float
+
+  correctness AnswerCorrectness
+
+  feedback String @db.Text
+
+  missingPoints  String[] @default([])
+  misconceptions String[] @default([])
+
+  /**
+   * Keep evaluator provenance so results remain
+   * auditable if the model or evaluation logic
+   * changes later.
+   */
+  evaluatorProvider String
+  evaluatorModel    String
+  evaluatorVersion  String @default("v1")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([correctness])
+  @@index([createdAt])
 }
 
 enum DocumentStatus {
@@ -241,4 +316,10 @@ enum QuestionDifficulty {
   EASY
   MEDIUM
   HARD
+}
+
+enum AnswerCorrectness {
+  CORRECT
+  PARTIAL
+  INCORRECT
 }
