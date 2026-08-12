@@ -15,6 +15,8 @@ import {
 } from '../learning-loop/learning-loop.service';
 import { PrismaService } from '../prisma/prisma.service';
 
+import { classifyStudyReadiness } from './study-session-readiness';
+
 type SessionConceptDifficulty = 'FOUNDATIONAL' | 'INTERMEDIATE' | 'ADVANCED';
 
 type SessionStatus = 'ACTIVE' | 'COMPLETED' | 'ABANDONED';
@@ -98,6 +100,12 @@ type SessionReadyConcept = {
   difficulty: SessionConceptDifficulty;
 
   createdAt: Date;
+
+  mastery: {
+    masteryScore: number;
+    evidenceWeight: number;
+    attemptCount: number;
+  } | null;
 
   questions: {
     id: string;
@@ -186,6 +194,16 @@ export class StudySessionsService {
 
         createdAt: true,
 
+        mastery: {
+          select: {
+            masteryScore: true,
+
+            evidenceWeight: true,
+
+            attemptCount: true,
+          },
+        },
+
         questions: {
           where: {
             type: 'RECALL',
@@ -232,6 +250,29 @@ export class StudySessionsService {
     }
 
     /*
+     * Normal study sessions should not restart
+     * concepts that already satisfy the exact
+     * mastery + evidence thresholds used by the
+     * adaptive policy.
+     *
+     * MASTERED concepts will later be handled by
+     * the dedicated review path.
+     */
+    const studyConcepts = readyConcepts.filter(
+      (concept) => classifyStudyReadiness(concept.mastery).needsNormalStudy,
+    );
+
+    if (studyConcepts.length === 0) {
+      throw new BadRequestException(
+        `Study Pack ${studyPackId} has no ` +
+          'session-ready concepts requiring ' +
+          'normal study. All currently ' +
+          'session-ready concepts already meet ' +
+          'the mastery and evidence thresholds.',
+      );
+    }
+
+    /*
      * Freeze concept ordering when the session
      * begins.
      *
@@ -242,7 +283,7 @@ export class StudySessionsService {
      * 3. earlier creation
      * 4. ID tie-breaker
      */
-    const orderedConcepts = [...readyConcepts].sort((left, right) => {
+    const orderedConcepts = [...studyConcepts].sort((left, right) => {
       if (left.importance !== right.importance) {
         return right.importance - left.importance;
       }
