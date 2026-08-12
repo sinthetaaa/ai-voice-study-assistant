@@ -16,6 +16,7 @@ import { QuestionsModule } from './questions/questions.module';
 import { RemediationModule } from './remediation/remediation.module';
 import { RetrievalModule } from './retrieval/retrieval.module';
 import { StudyPacksModule } from './study-packs/study-packs.module';
+import { StudySessionsModule } from './study-sessions/study-sessions.module';
 
 @Module({
   imports: [
@@ -47,6 +48,8 @@ import { StudyPacksModule } from './study-packs/study-packs.module';
     RemediationModule,
 
     LearningLoopModule,
+
+    StudySessionsModule,
   ],
 
   controllers: [AppController],
