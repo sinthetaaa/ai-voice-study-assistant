@@ -13,6 +13,7 @@ import { RetrievalModule } from './retrieval/retrieval.module';
 import { StudyPacksModule } from './study-packs/study-packs.module';
 import { EvaluationsModule } from './evaluations/evaluations.module';
 import { MasteryModule } from './mastery/mastery.module';
+import { AdaptiveModule } from './adaptive/adaptive.module';
 
 @Module({
   imports: [
@@ -38,6 +39,8 @@ import { MasteryModule } from './mastery/mastery.module';
     EvaluationsModule,
 
     MasteryModule,
+
+    AdaptiveModule,
   ],
 
   controllers: [AppController],
