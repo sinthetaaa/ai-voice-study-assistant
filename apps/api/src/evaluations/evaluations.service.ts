@@ -1,9 +1,14 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 
+import {
+  MasteryApplicationResult,
+  MasteryService,
+} from '../mastery/mastery.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 import {
@@ -12,7 +17,9 @@ import {
   EvaluationEvidenceChunk,
 } from './evaluation-ai-client.service';
 
-export type PersistedEvaluationResult = {
+export type MasteryUpdateStatus = 'APPLIED' | 'ALREADY_APPLIED' | 'PENDING';
+
+type PersistedEvaluationRecord = {
   studyPackId: string;
 
   conceptId: string;
@@ -48,14 +55,24 @@ export type PersistedEvaluationResult = {
   createdAt: Date;
 };
 
+export type PersistedEvaluationResult = PersistedEvaluationRecord & {
+  masteryStatus: MasteryUpdateStatus;
+
+  mastery: MasteryApplicationResult | null;
+};
+
 @Injectable()
 export class EvaluationsService {
   private static readonly MAX_ANSWER_LENGTH = 12_000;
+
+  private readonly logger = new Logger(EvaluationsService.name);
 
   constructor(
     private readonly prisma: PrismaService,
 
     private readonly evaluationAiClient: EvaluationAiClientService,
+
+    private readonly masteryService: MasteryService,
   ) {}
 
   async evaluateQuestion(
@@ -70,7 +87,7 @@ export class EvaluationsService {
      * Load the exact persisted question and
      * provenance BEFORE calling the evaluator.
      *
-     * These values become the immutable attempt
+     * These values become immutable attempt
      * snapshots if evaluation succeeds.
      */
     const question = await this.prisma.question.findFirst({
@@ -179,10 +196,11 @@ export class EvaluationsService {
     }
 
     /*
-     * The AI call happens before database mutation.
+     * The AI call happens BEFORE any database
+     * mutation.
      *
-     * If evaluation fails, no partial
-     * QuestionAttempt is persisted.
+     * If evaluation fails, no QuestionAttempt
+     * or AnswerEvaluation is created.
      */
     const evaluation = await this.evaluationAiClient.evaluateAnswer({
       questionId: question.id,
@@ -202,7 +220,11 @@ export class EvaluationsService {
       answerText,
     });
 
-    return this.persistEvaluation(
+    /*
+     * Persist QuestionAttempt + AnswerEvaluation
+     * atomically.
+     */
+    const persistedEvaluation = await this.persistEvaluation(
       studyPackId,
       conceptId,
       question,
@@ -210,6 +232,57 @@ export class EvaluationsService {
       answerText,
       evaluation,
     );
+
+    /*
+     * Apply mastery AFTER the evaluation has been
+     * safely persisted.
+     *
+     * Mastery processing is idempotent by
+     * evaluationId, so an interrupted or failed
+     * update can safely be repaired later.
+     *
+     * A mastery failure must NOT cause the already
+     * valid learner evaluation to appear failed to
+     * the client. Otherwise the client may retry
+     * the answer submission and create an
+     * unintended second attempt.
+     */
+    try {
+      const mastery = await this.masteryService.applyEvaluation(
+        persistedEvaluation.evaluationId,
+      );
+
+      return {
+        ...persistedEvaluation,
+
+        masteryStatus: mastery.applied ? 'APPLIED' : 'ALREADY_APPLIED',
+
+        mastery,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+
+      const stack = error instanceof Error ? error.stack : undefined;
+
+      this.logger.error(
+        'Mastery update failed after ' +
+          'successful answer evaluation. ' +
+          `evaluationId=` +
+          `${persistedEvaluation.evaluationId}. ` +
+          `The evaluation remains persisted and ` +
+          `can be repaired idempotently. ` +
+          `Reason: ${message}`,
+        stack,
+      );
+
+      return {
+        ...persistedEvaluation,
+
+        masteryStatus: 'PENDING',
+
+        mastery: null,
+      };
+    }
   }
 
   private async persistEvaluation(
@@ -229,7 +302,7 @@ export class EvaluationsService {
     evidenceChunks: EvaluationEvidenceChunk[],
     answerText: string,
     evaluation: AnswerEvaluationResult,
-  ): Promise<PersistedEvaluationResult> {
+  ): Promise<PersistedEvaluationRecord> {
     const persisted = await this.prisma.$transaction(async (transaction) => {
       const attempt = await transaction.questionAttempt.create({
         data: {
