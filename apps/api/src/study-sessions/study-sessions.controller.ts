@@ -1,6 +1,10 @@
 import { Body, Controller, Get, Param, Post } from '@nestjs/common';
 
 import {
+  StudyPackReadinessResult,
+  StudyPackReadinessService,
+} from './study-pack-readiness.service';
+import {
   StartStudySessionResult,
   StudySessionAnswerResult,
   StudySessionStateResult,
@@ -13,7 +17,11 @@ type AnswerStudySessionBody = {
 
 @Controller()
 export class StudySessionsController {
-  constructor(private readonly studySessionsService: StudySessionsService) {}
+  constructor(
+    private readonly studySessionsService: StudySessionsService,
+
+    private readonly studyPackReadinessService: StudyPackReadinessService,
+  ) {}
 
   @Post('study-packs/:studyPackId/sessions')
   async startSession(
@@ -21,6 +29,14 @@ export class StudySessionsController {
     studyPackId: string,
   ): Promise<StartStudySessionResult> {
     return this.studySessionsService.startSession(studyPackId);
+  }
+
+  @Get('study-packs/:studyPackId/readiness')
+  async getStudyPackReadiness(
+    @Param('studyPackId')
+    studyPackId: string,
+  ): Promise<StudyPackReadinessResult> {
+    return this.studyPackReadinessService.getReadiness(studyPackId);
   }
 
   @Post('study-sessions/:sessionId/answer')

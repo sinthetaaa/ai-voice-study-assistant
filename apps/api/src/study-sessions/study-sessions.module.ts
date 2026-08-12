@@ -4,6 +4,7 @@ import { EvaluationsModule } from '../evaluations/evaluations.module';
 import { LearningLoopModule } from '../learning-loop/learning-loop.module';
 import { PrismaModule } from '../prisma/prisma.module';
 
+import { StudyPackReadinessService } from './study-pack-readiness.service';
 import { StudySessionsController } from './study-sessions.controller';
 import { StudySessionsService } from './study-sessions.service';
 
@@ -12,8 +13,8 @@ import { StudySessionsService } from './study-sessions.service';
 
   controllers: [StudySessionsController],
 
-  providers: [StudySessionsService],
+  providers: [StudySessionsService, StudyPackReadinessService],
 
-  exports: [StudySessionsService],
+  exports: [StudySessionsService, StudyPackReadinessService],
 })
 export class StudySessionsModule {}
