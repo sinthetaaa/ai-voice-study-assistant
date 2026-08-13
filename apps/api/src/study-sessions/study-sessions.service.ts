@@ -16,6 +16,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { QuestionsService } from '../questions/questions.service';
 
+import { scheduleConceptReview } from './review-scheduling-policy';
 import { classifyStudyReadiness } from './study-session-readiness';
 
 type SessionConceptDifficulty = 'FOUNDATIONAL' | 'INTERMEDIATE' | 'ADVANCED';
@@ -782,7 +783,8 @@ export class StudySessionsService {
       await this.advanceConcept(
         sessionId,
         currentConceptId,
-        learningStep.action === 'ADVANCE_WITH_REVIEW',
+        learningStep.action,
+        learningStep.reviewQuestionType,
       );
 
       return;
@@ -796,9 +798,20 @@ export class StudySessionsService {
   private async advanceConcept(
     sessionId: string,
     conceptId: string,
-    reviewRequired: boolean,
+    action: 'ADVANCE_CONCEPT' | 'ADVANCE_WITH_REVIEW',
+    reviewQuestionType: 'RECALL' | 'UNDERSTANDING' | 'APPLICATION' | null,
   ): Promise<void> {
     const now = new Date();
+
+    const reviewRequired = action === 'ADVANCE_WITH_REVIEW';
+
+    const reviewSchedule = scheduleConceptReview({
+      action,
+
+      completedAt: now,
+
+      reviewQuestionType,
+    });
 
     await this.prisma.$transaction(async (transaction) => {
       /*
@@ -820,6 +833,53 @@ export class StudySessionsService {
           reviewRequired,
 
           completedAt: now,
+        },
+      });
+
+      /*
+       * Persist the delayed-review schedule in
+       * ConceptMastery.
+       *
+       * Secure mastery:
+       *   APPLICATION maintenance review
+       *   after 7 days.
+       *
+       * ADVANCE_WITH_REVIEW:
+       *   early reinforcement using the
+       *   adaptive policy's requested level
+       *   after 1 day.
+       *
+       * lastReviewedAt stays unchanged because
+       * scheduling a review is not the same as
+       * completing one.
+       */
+      const mastery = await transaction.conceptMastery.findUnique({
+        where: {
+          conceptId,
+        },
+
+        select: {
+          id: true,
+        },
+      });
+
+      if (!mastery) {
+        throw new InternalServerErrorException(
+          `Concept ${conceptId} advanced ` + 'without persisted mastery state',
+        );
+      }
+
+      await transaction.conceptMastery.update({
+        where: {
+          conceptId,
+        },
+
+        data: {
+          reviewDueAt: reviewSchedule.reviewDueAt,
+
+          reviewQuestionType: reviewSchedule.reviewQuestionType,
+
+          reviewIntervalDays: reviewSchedule.reviewIntervalDays,
         },
       });
 
