@@ -51,6 +51,22 @@ export type StudyPackConceptReadiness = {
 
     needsNormalStudy: boolean;
   };
+
+  review: {
+    scheduled: boolean;
+
+    due: boolean;
+
+    inProgress: boolean;
+
+    dueAt: Date | null;
+
+    questionType: RequiredQuestionType | null;
+
+    intervalDays: number;
+
+    lastReviewedAt: Date | null;
+  };
 };
 
 export type StudyPackReadinessResult = {
@@ -80,6 +96,10 @@ export type StudyPackReadinessResult = {
     normalStudyConceptCount: number;
 
     masteredQuestionReadyConceptCount: number;
+
+    scheduledReviewCount: number;
+
+    dueReviewCount: number;
   };
 
   questionPreparationCoverage: {
@@ -111,6 +131,32 @@ export class StudyPackReadinessService {
     if (!studyPack) {
       throw new NotFoundException(`Study Pack ${studyPackId} was not found`);
     }
+
+    const now = new Date();
+
+    const activeReviewSessions = await this.prisma.studySession.findMany({
+      where: {
+        studyPackId,
+
+        kind: 'REVIEW',
+
+        status: 'ACTIVE',
+
+        currentConceptId: {
+          not: null,
+        },
+      },
+
+      select: {
+        currentConceptId: true,
+      },
+    });
+
+    const activeReviewConceptIds = new Set(
+      activeReviewSessions
+        .map((session) => session.currentConceptId)
+        .filter((conceptId): conceptId is string => Boolean(conceptId)),
+    );
 
     /*
      * Only concepts with current READY source
@@ -165,6 +211,14 @@ export class StudyPackReadinessService {
             evidenceWeight: true,
 
             attemptCount: true,
+
+            reviewDueAt: true,
+
+            reviewQuestionType: true,
+
+            reviewIntervalDays: true,
+
+            lastReviewedAt: true,
           },
         },
 
@@ -204,7 +258,27 @@ export class StudyPackReadinessService {
           (type) => !readyQuestionTypes.has(type),
         );
 
-        const readiness = classifyStudyReadiness(concept.mastery);
+        const classifiedReadiness = classifyStudyReadiness(concept.mastery);
+
+        const scheduled = Boolean(
+          concept.mastery?.reviewDueAt && concept.mastery.reviewQuestionType,
+        );
+
+        const due = Boolean(
+          scheduled && concept.mastery!.reviewDueAt!.getTime() <= now.getTime(),
+        );
+
+        const inProgress = activeReviewConceptIds.has(concept.id);
+
+        const readiness = {
+          ...classifiedReadiness,
+
+          /*
+           * A scheduled review owns this
+           * concept's next exposure.
+           */
+          needsNormalStudy: classifiedReadiness.needsNormalStudy && !scheduled,
+        };
 
         return {
           id: concept.id,
@@ -222,6 +296,22 @@ export class StudyPackReadinessService {
           missingQuestionTypes,
 
           readiness,
+
+          review: {
+            scheduled,
+
+            due,
+
+            inProgress,
+
+            dueAt: concept.mastery?.reviewDueAt ?? null,
+
+            questionType: concept.mastery?.reviewQuestionType ?? null,
+
+            intervalDays: concept.mastery?.reviewIntervalDays ?? 0,
+
+            lastReviewedAt: concept.mastery?.lastReviewedAt ?? null,
+          },
         };
       },
     );
@@ -264,6 +354,14 @@ export class StudyPackReadinessService {
       (concept) => concept.readiness.state === 'MASTERED',
     ).length;
 
+    const scheduledReviewCount = conceptSnapshots.filter(
+      (concept) => concept.review.scheduled,
+    ).length;
+
+    const dueReviewCount = conceptSnapshots.filter(
+      (concept) => concept.review.due && !concept.review.inProgress,
+    ).length;
+
     const ratio =
       activeConceptCount === 0
         ? 0
@@ -302,6 +400,10 @@ export class StudyPackReadinessService {
         normalStudyConceptCount,
 
         masteredQuestionReadyConceptCount,
+
+        scheduledReviewCount,
+
+        dueReviewCount,
       },
 
       questionPreparationCoverage: {

@@ -16,12 +16,18 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { QuestionsService } from '../questions/questions.service';
 
+import {
+  completeConceptReview,
+  ReviewAnswerCorrectness,
+} from './review-completion-policy';
 import { scheduleConceptReview } from './review-scheduling-policy';
 import { classifyStudyReadiness } from './study-session-readiness';
 
 type SessionConceptDifficulty = 'FOUNDATIONAL' | 'INTERMEDIATE' | 'ADVANCED';
 
 type SessionStatus = 'ACTIVE' | 'COMPLETED' | 'ABANDONED';
+
+type SessionKind = 'NORMAL' | 'REVIEW';
 
 type SessionConceptStatus =
   'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'REVIEW_REQUIRED';
@@ -57,6 +63,8 @@ export type StudySessionStateResult = {
 
   studyPackId: string;
 
+  kind: SessionKind;
+
   status: SessionStatus;
 
   startedAt: Date;
@@ -84,10 +92,35 @@ export type StartStudySessionResult = StudySessionStateResult & {
   currentQuestion: StudySessionQuestion;
 };
 
+export type ReviewSessionStepResult = {
+  action: 'COMPLETE_REVIEW';
+
+  reasonCode:
+    | 'CORRECT_REVIEW_SPACED'
+    | 'PARTIAL_REVIEW_REINFORCE'
+    | 'INCORRECT_REVIEW_REINFORCE';
+
+  reason: string;
+
+  correctness: 'CORRECT' | 'PARTIAL' | 'INCORRECT';
+
+  reviewQuestionType: 'RECALL' | 'UNDERSTANDING' | 'APPLICATION';
+
+  previousIntervalDays: number;
+
+  nextIntervalDays: number;
+
+  completedAt: Date;
+
+  nextReviewDueAt: Date;
+};
+
 export type StudySessionAnswerResult = {
   evaluation: PersistedEvaluationResult;
 
-  learningStep: LearningLoopNextStepResult;
+  learningStep: LearningLoopNextStepResult | null;
+
+  reviewStep: ReviewSessionStepResult | null;
 
   session: StudySessionStateResult;
 };
@@ -107,6 +140,7 @@ type SessionPlanConcept = {
     masteryScore: number;
     evidenceWeight: number;
     attemptCount: number;
+    reviewDueAt: Date | null;
   } | null;
 };
 
@@ -189,14 +223,27 @@ export class StudySessionsService {
             evidenceWeight: true,
 
             attemptCount: true,
+
+            reviewDueAt: true,
           },
         },
       },
     });
 
-    const studyConcepts: SessionPlanConcept[] = concepts.filter(
-      (concept) => classifyStudyReadiness(concept.mastery).needsNormalStudy,
-    );
+    const studyConcepts: SessionPlanConcept[] = concepts.filter((concept) => {
+      const readiness = classifyStudyReadiness(concept.mastery);
+
+      /*
+       * Once a concept has been advanced into
+       * delayed review, the review subsystem owns
+       * its next exposure.
+       *
+       * Do not immediately recycle it into a new
+       * NORMAL session merely because its mastery
+       * score is still below the secure threshold.
+       */
+      return readiness.needsNormalStudy && !concept.mastery?.reviewDueAt;
+    });
 
     if (studyConcepts.length === 0) {
       throw new BadRequestException(
@@ -469,6 +516,192 @@ export class StudySessionsService {
     }));
   }
 
+  async startReviewSession(
+    studyPackId: string,
+  ): Promise<StudySessionStateResult> {
+    const studyPack = await this.prisma.studyPack.findUnique({
+      where: {
+        id: studyPackId,
+      },
+
+      select: {
+        id: true,
+      },
+    });
+
+    if (!studyPack) {
+      throw new NotFoundException(`Study Pack ${studyPackId} was not found`);
+    }
+
+    /*
+     * Repeated start requests resume the
+     * currently ACTIVE review session instead of
+     * creating duplicate review attempts.
+     */
+    const existingReviewSession = await this.prisma.studySession.findFirst({
+      where: {
+        studyPackId,
+
+        kind: 'REVIEW',
+
+        status: 'ACTIVE',
+      },
+
+      orderBy: {
+        startedAt: 'asc',
+      },
+
+      select: {
+        id: true,
+      },
+    });
+
+    if (existingReviewSession) {
+      return this.getSessionState(existingReviewSession.id);
+    }
+
+    const now = new Date();
+
+    const concepts = await this.prisma.concept.findMany({
+      where: {
+        studyPackId,
+
+        sources: {
+          some: {
+            chunk: {
+              unit: {
+                document: {
+                  status: 'READY',
+                },
+              },
+            },
+          },
+        },
+      },
+
+      select: {
+        id: true,
+
+        name: true,
+
+        importance: true,
+
+        createdAt: true,
+
+        mastery: {
+          select: {
+            reviewDueAt: true,
+
+            reviewQuestionType: true,
+
+            reviewIntervalDays: true,
+          },
+        },
+      },
+    });
+
+    const dueConcepts = concepts
+      .filter(
+        (concept) =>
+          concept.mastery?.reviewDueAt &&
+          concept.mastery.reviewQuestionType &&
+          concept.mastery.reviewDueAt.getTime() <= now.getTime(),
+      )
+      .sort((left, right) => {
+        const leftDueAt = left.mastery!.reviewDueAt!.getTime();
+
+        const rightDueAt = right.mastery!.reviewDueAt!.getTime();
+
+        if (leftDueAt !== rightDueAt) {
+          return leftDueAt - rightDueAt;
+        }
+
+        if (left.importance !== right.importance) {
+          return right.importance - left.importance;
+        }
+
+        const createdDifference =
+          left.createdAt.getTime() - right.createdAt.getTime();
+
+        if (createdDifference !== 0) {
+          return createdDifference;
+        }
+
+        return left.id.localeCompare(right.id);
+      });
+
+    const concept = dueConcepts[0];
+
+    if (!concept) {
+      throw new BadRequestException(
+        `Study Pack ${studyPackId} has no due reviews.`,
+      );
+    }
+
+    const reviewQuestionType = concept.mastery!.reviewQuestionType!;
+
+    /*
+     * Reuse the existing grounded question
+     * preparation subsystem if document changes
+     * removed the previously READY-backed set.
+     */
+    const questions = await this.ensureConceptQuestionSet(
+      studyPackId,
+      concept.id,
+    );
+
+    const reviewQuestion = questions.find(
+      (question) => question.type === reviewQuestionType,
+    );
+
+    if (!reviewQuestion) {
+      throw new InternalServerErrorException(
+        `Concept ${concept.id} does not have ` +
+          `a READY ${reviewQuestionType} review question`,
+      );
+    }
+
+    const sessionId = await this.prisma.$transaction(async (transaction) => {
+      const session = await transaction.studySession.create({
+        data: {
+          studyPackId,
+
+          kind: 'REVIEW',
+
+          status: 'ACTIVE',
+
+          currentConceptId: concept.id,
+
+          currentQuestionId: reviewQuestion.id,
+        },
+
+        select: {
+          id: true,
+        },
+      });
+
+      await transaction.sessionConceptProgress.create({
+        data: {
+          sessionId: session.id,
+
+          conceptId: concept.id,
+
+          position: 0,
+
+          status: 'IN_PROGRESS',
+
+          reviewRequired: false,
+
+          startedAt: now,
+        },
+      });
+
+      return session.id;
+    });
+
+    return this.getSessionState(sessionId);
+  }
+
   async answerSession(
     sessionId: string,
     rawAnswerText: unknown,
@@ -493,6 +726,8 @@ export class StudySessionsService {
         studyPackId: true,
 
         status: true,
+
+        kind: true,
 
         currentConceptId: true,
 
@@ -537,12 +772,36 @@ export class StudySessionsService {
     );
 
     /*
-     * Evaluation persistence and mastery are now
-     * complete.
+     * REVIEW sessions intentionally bypass the
+     * normal adaptive question ladder.
      *
-     * Ask the existing stateless LearningLoop
-     * what this evaluation means for the next
-     * learner action.
+     * The scheduled question is the entire review
+     * check. Evaluation and Bayesian mastery have
+     * already been applied above.
+     */
+    if (session.kind === 'REVIEW') {
+      const reviewStep = await this.completeReviewSession(
+        session.id,
+        conceptId,
+        evaluation.correctness,
+      );
+
+      const updatedSession = await this.getSessionState(session.id);
+
+      return {
+        evaluation,
+
+        learningStep: null,
+
+        reviewStep,
+
+        session: updatedSession,
+      };
+    }
+
+    /*
+     * NORMAL sessions preserve the existing
+     * adaptive LearningLoop behavior unchanged.
      */
     const learningStep = await this.learningLoopService.getNextStep(
       session.studyPackId,
@@ -550,10 +809,6 @@ export class StudySessionsService {
       evaluation.evaluationId,
     );
 
-    /*
-     * Apply the learning decision to persistent
-     * session state.
-     */
     await this.applyLearningStep(
       session.id,
       conceptId,
@@ -567,6 +822,8 @@ export class StudySessionsService {
       evaluation,
 
       learningStep,
+
+      reviewStep: null,
 
       session: updatedSession,
     };
@@ -582,6 +839,8 @@ export class StudySessionsService {
         id: true,
 
         studyPackId: true,
+
+        kind: true,
 
         status: true,
 
@@ -692,6 +951,8 @@ export class StudySessionsService {
 
       studyPackId: session.studyPackId,
 
+      kind: session.kind,
+
       status: session.status,
 
       startedAt: session.startedAt,
@@ -712,6 +973,117 @@ export class StudySessionsService {
 
       currentQuestion,
     };
+  }
+
+  private async completeReviewSession(
+    sessionId: string,
+    conceptId: string,
+    correctness: ReviewAnswerCorrectness,
+  ): Promise<ReviewSessionStepResult> {
+    const now = new Date();
+
+    return this.prisma.$transaction(async (transaction) => {
+      const mastery = await transaction.conceptMastery.findUnique({
+        where: {
+          conceptId,
+        },
+
+        select: {
+          reviewQuestionType: true,
+
+          reviewIntervalDays: true,
+        },
+      });
+
+      if (!mastery || !mastery.reviewQuestionType) {
+        throw new InternalServerErrorException(
+          `Concept ${conceptId} completed a review ` +
+            'without persistent review state',
+        );
+      }
+
+      const previousIntervalDays = mastery.reviewIntervalDays;
+
+      const decision = completeConceptReview({
+        correctness,
+
+        completedAt: now,
+
+        currentIntervalDays: previousIntervalDays,
+
+        reviewQuestionType: mastery.reviewQuestionType,
+      });
+
+      await transaction.sessionConceptProgress.update({
+        where: {
+          sessionId_conceptId: {
+            sessionId,
+
+            conceptId,
+          },
+        },
+
+        data: {
+          status: 'COMPLETED',
+
+          reviewRequired: false,
+
+          completedAt: now,
+        },
+      });
+
+      await transaction.conceptMastery.update({
+        where: {
+          conceptId,
+        },
+
+        data: {
+          reviewDueAt: decision.nextReviewDueAt,
+
+          reviewQuestionType: decision.reviewQuestionType,
+
+          reviewIntervalDays: decision.nextReviewIntervalDays,
+
+          lastReviewedAt: now,
+        },
+      });
+
+      await transaction.studySession.update({
+        where: {
+          id: sessionId,
+        },
+
+        data: {
+          status: 'COMPLETED',
+
+          currentConceptId: null,
+
+          currentQuestionId: null,
+
+          completedAt: now,
+        },
+      });
+
+      return {
+        action: 'COMPLETE_REVIEW',
+
+        reasonCode: decision.reasonCode,
+
+        reason: decision.reason,
+
+        correctness,
+
+        reviewQuestionType: decision.reviewQuestionType,
+
+        previousIntervalDays,
+
+        nextIntervalDays: decision.nextReviewIntervalDays,
+
+        completedAt: now,
+
+        nextReviewDueAt: decision.nextReviewDueAt,
+      };
+    });
   }
 
   private async applyLearningStep(

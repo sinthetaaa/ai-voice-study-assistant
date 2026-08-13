@@ -31,6 +31,14 @@ export class StudySessionsController {
     return this.studySessionsService.startSession(studyPackId);
   }
 
+  @Post('study-packs/:studyPackId/review-sessions')
+  async startReviewSession(
+    @Param('studyPackId')
+    studyPackId: string,
+  ): Promise<StudySessionStateResult> {
+    return this.studySessionsService.startReviewSession(studyPackId);
+  }
+
   @Get('study-packs/:studyPackId/readiness')
   async getStudyPackReadiness(
     @Param('studyPackId')
