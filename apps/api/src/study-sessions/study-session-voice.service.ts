@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 
 import {
   SpeechAiClientService,
@@ -6,6 +11,7 @@ import {
 } from '../speech/speech-ai-client.service';
 
 import { composeStudySessionVoiceResponse } from './study-session-voice-response';
+
 import {
   StudySessionAnswerResult,
   StudySessionsService,
@@ -53,6 +59,16 @@ export type StudySessionVoiceAnswerResult = {
   speech: VoiceSynthesisState;
 };
 
+export type StudySessionQuestionSpeechResult = {
+  sessionId: string;
+
+  questionId: string;
+
+  text: string;
+
+  speech: VoiceSynthesisState;
+};
+
 @Injectable()
 export class StudySessionVoiceService {
   private readonly logger = new Logger(StudySessionVoiceService.name);
@@ -62,6 +78,82 @@ export class StudySessionVoiceService {
 
     private readonly speechAiClient: SpeechAiClientService,
   ) {}
+
+  async synthesizeCurrentQuestion(
+    sessionId: string,
+  ): Promise<StudySessionQuestionSpeechResult> {
+    const session = await this.studySessionsService.getSessionState(sessionId);
+
+    if (session.status !== 'ACTIVE') {
+      throw new BadRequestException(`StudySession ${sessionId} is not active.`);
+    }
+
+    if (!session.currentQuestion) {
+      throw new NotFoundException(
+        `StudySession ${sessionId} has no current question.`,
+      );
+    }
+
+    const text = session.currentQuestion.prompt;
+
+    try {
+      const synthesized = await this.speechAiClient.synthesizeText(text);
+
+      return {
+        sessionId,
+
+        questionId: session.currentQuestion.id,
+
+        text,
+
+        speech: {
+          status: 'READY',
+
+          mimeType: synthesized.mimeType,
+
+          audioBase64: synthesized.audio.toString('base64'),
+
+          model: synthesized.model,
+
+          speaker: synthesized.speaker,
+
+          sampleRate: synthesized.sampleRate,
+
+          durationSeconds: synthesized.durationSeconds,
+        },
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+
+      this.logger.error(
+        `Question TTS failed for session ${sessionId}. Reason: ${message}`,
+      );
+
+      return {
+        sessionId,
+
+        questionId: session.currentQuestion.id,
+
+        text,
+
+        speech: {
+          status: 'FAILED',
+
+          mimeType: null,
+
+          audioBase64: null,
+
+          model: null,
+
+          speaker: null,
+
+          sampleRate: null,
+
+          durationSeconds: null,
+        },
+      };
+    }
+  }
 
   async answerSession(
     sessionId: string,
@@ -75,13 +167,6 @@ export class StudySessionVoiceService {
       throw new BadRequestException('Uploaded audio is empty.');
     }
 
-    /*
-     * STT happens before any learner-state
-     * mutation.
-     *
-     * If transcription fails, answerSession()
-     * is never entered.
-     */
     const transcription = await this.speechAiClient.transcribeAudio({
       audio: audio.buffer,
 
@@ -90,14 +175,6 @@ export class StudySessionVoiceService {
       mimeType: audio.mimetype || 'audio/wav',
     });
 
-    /*
-     * Reuse the proven text-answer path.
-     *
-     * This remains the ONLY place where
-     * evaluation, mastery, adaptation,
-     * remediation and session progression
-     * are applied.
-     */
     const answer = await this.studySessionsService.answerSession(
       sessionId,
       transcription.text,
@@ -105,17 +182,6 @@ export class StudySessionVoiceService {
 
     const spokenResponseText = composeStudySessionVoiceResponse(answer);
 
-    /*
-     * IMPORTANT:
-     *
-     * At this point the learner answer may
-     * already be persisted.
-     *
-     * A TTS failure must therefore NOT turn
-     * this request into an HTTP failure that
-     * encourages the client to resubmit the
-     * learner answer.
-     */
     try {
       const synthesized =
         await this.speechAiClient.synthesizeText(spokenResponseText);

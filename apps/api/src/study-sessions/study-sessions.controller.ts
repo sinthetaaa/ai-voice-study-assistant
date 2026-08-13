@@ -7,16 +7,20 @@ import {
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
+
 import { FileInterceptor } from '@nestjs/platform-express';
 
 import {
   StudyPackReadinessResult,
   StudyPackReadinessService,
 } from './study-pack-readiness.service';
+
 import {
+  StudySessionQuestionSpeechResult,
   StudySessionVoiceAnswerResult,
   StudySessionVoiceService,
 } from './study-session-voice.service';
+
 import {
   StartStudySessionResult,
   StudySessionAnswerResult,
@@ -71,6 +75,14 @@ export class StudySessionsController {
     body: AnswerStudySessionBody,
   ): Promise<StudySessionAnswerResult> {
     return this.studySessionsService.answerSession(sessionId, body?.answerText);
+  }
+
+  @Post('study-sessions/:sessionId/question-speech')
+  async speakCurrentQuestion(
+    @Param('sessionId')
+    sessionId: string,
+  ): Promise<StudySessionQuestionSpeechResult> {
+    return this.studySessionVoiceService.synthesizeCurrentQuestion(sessionId);
   }
 
   @Post('study-sessions/:sessionId/voice-answer')

@@ -1,158 +1,331 @@
-import { LearningLoopNextStepResult } from '../learning-loop/learning-loop.service';
-
-import { composeStudySessionVoiceResponse } from './study-session-voice-response';
 import { StudySessionAnswerResult } from './study-sessions.service';
 
+import { composeStudySessionVoiceResponse } from './study-session-voice-response';
+
 function makeResult(
-  overrides: {
-    action?: LearningLoopNextStepResult['action'] | null;
-
-    correctness?: 'CORRECT' | 'PARTIAL' | 'INCORRECT';
-
-    currentQuestion?: string | null;
-
-    sessionStatus?: 'ACTIVE' | 'COMPLETED';
-
-    remediationFocus?: string | null;
-
-    remediationExplanation?: string;
-
-    reviewCorrectness?: 'CORRECT' | 'PARTIAL' | 'INCORRECT' | null;
-  } = {},
+  overrides: Partial<StudySessionAnswerResult> = {},
 ): StudySessionAnswerResult {
-  const action = overrides.action ?? 'ASK_QUESTION';
-
-  const learningStep =
-    action === null
-      ? null
-      : ({
-          action,
-
-          remediation: overrides.remediationFocus
-            ? {
-                focusPoints: [overrides.remediationFocus],
-
-                explanation:
-                  overrides.remediationExplanation ??
-                  'A deliberately long remediation explanation that should not be spoken in full.',
-
-                keyTakeaways: [],
-              }
-            : null,
-        } as LearningLoopNextStepResult);
-
-  const reviewStep = overrides.reviewCorrectness
-    ? ({
-        correctness: overrides.reviewCorrectness,
-      } as StudySessionAnswerResult['reviewStep'])
-    : null;
-
   return {
     evaluation: {
-      correctness: overrides.correctness ?? 'CORRECT',
+      studyPackId: 'pack-1',
 
-      feedback:
-        'This evaluator feedback is intentionally longer than we want Ryan to speak.',
+      conceptId: 'concept-1',
+
+      questionId: 'question-1',
+
+      studySessionId: 'session-1',
+
+      attemptId: 'attempt-1',
+
+      evaluationId: 'evaluation-1',
+
+      questionType: 'RECALL',
+
+      difficulty: 'EASY',
+
+      answerText: 'Sample learner answer',
+
+      score: 1,
+
+      correctness: 'CORRECT',
+
+      feedback: 'You correctly identified the central idea.',
+
+      missingPoints: [],
+
+      misconceptions: [],
+
+      evaluatorProvider: 'test',
+
+      evaluatorModel: 'test',
+
+      evaluatorVersion: 'test',
+
+      createdAt: new Date(),
+
+      masteryStatus: 'APPLIED',
+
+      mastery: null,
     },
 
-    learningStep,
+    learningStep: {
+      studyPackId: 'pack-1',
 
-    reviewStep,
+      conceptId: 'concept-1',
+
+      conceptName: 'Test Concept',
+
+      evaluationId: 'evaluation-1',
+
+      decisionVersion: 'test',
+
+      action: 'ASK_QUESTION',
+
+      reasonCode: 'TEST',
+
+      reason: 'test',
+
+      mastery: {
+        score: 0.5,
+
+        evidenceWeight: 1,
+      },
+
+      question: {
+        id: 'question-2',
+
+        type: 'UNDERSTANDING',
+
+        difficulty: 'MEDIUM',
+
+        prompt: 'What comes next?',
+      },
+
+      remediation: null,
+
+      nextQuestionType: 'UNDERSTANDING',
+
+      retestQuestionType: null,
+
+      reviewQuestionType: null,
+    },
+
+    reviewStep: null,
 
     session: {
-      status: overrides.sessionStatus ?? 'ACTIVE',
+      sessionId: 'session-1',
 
-      currentQuestion:
-        overrides.currentQuestion === null
-          ? null
-          : {
-              prompt: overrides.currentQuestion ?? 'What comes next?',
-            },
+      studyPackId: 'pack-1',
+
+      kind: 'NORMAL',
+
+      status: 'ACTIVE',
+
+      startedAt: new Date(),
+
+      completedAt: null,
+
+      conceptCount: 1,
+
+      progress: {
+        completedConceptCount: 0,
+
+        reviewRequiredCount: 0,
+
+        remainingConceptCount: 1,
+      },
+
+      currentConcept: null,
+
+      currentQuestion: {
+        id: 'question-2',
+
+        type: 'UNDERSTANDING',
+
+        difficulty: 'MEDIUM',
+
+        prompt: 'What comes next?',
+      },
+
+      conceptFlow: [],
     },
-  } as StudySessionAnswerResult;
+
+    ...overrides,
+  };
 }
 
 describe('composeStudySessionVoiceResponse', () => {
-  it('keeps successful progression concise', () => {
+  it('explains successful progression without speaking the next question', () => {
     const text = composeStudySessionVoiceResponse(makeResult());
 
     expect(text).toBe(
-      "That's right. " + 'Next question. ' + 'What comes next?',
+      "That's right. " + 'You correctly identified the central idea.',
     );
+
+    expect(text).not.toContain('What comes next?');
+
+    expect(text).not.toContain('Next question');
   });
 
-  it('speaks only the core remediation point', () => {
-    const text = composeStudySessionVoiceResponse(
-      makeResult({
-        action: 'REMEDIATE_AND_ASK',
+  it('speaks concise remediation without appending the retry question', () => {
+    const result = makeResult({
+      evaluation: {
+        ...makeResult().evaluation,
 
         correctness: 'INCORRECT',
 
-        remediationFocus: 'The Beer-Lambert Law',
+        score: 0,
 
-        currentQuestion: 'Which physical law is used?',
-      }),
-    );
+        feedback: '',
+      },
 
-    expect(text).toBe(
-      'Not quite. ' +
-        'The key idea is the Beer-Lambert Law. ' +
-        "Let's try that again. " +
-        'Which physical law is used?',
-    );
+      learningStep: {
+        ...makeResult().learningStep!,
+
+        action: 'REMEDIATE_AND_ASK',
+
+        question: {
+          id: 'question-3',
+
+          type: 'RECALL',
+
+          difficulty: 'EASY',
+
+          prompt: 'Which physical law is used?',
+        },
+
+        remediation: {
+          kind: 'GENERAL_GAP',
+
+          focusPoints: ['The Beer-Lambert Law'],
+
+          explanation:
+            'A deliberately long remediation explanation that should not be spoken in full.',
+
+          keyTakeaways: [],
+
+          evidenceChunkIds: [],
+
+          generatorProvider: 'test',
+
+          generatorModel: 'test',
+
+          generatorVersion: 'test',
+        },
+      },
+    });
+
+    const text = composeStudySessionVoiceResponse(result);
+
+    expect(text).toBe('Not quite. ' + 'The key idea is the Beer-Lambert Law.');
+
+    expect(text).not.toContain('Which physical law is used?');
 
     expect(text).not.toContain('deliberately long remediation');
-
-    expect(text).not.toContain('evaluator feedback');
   });
 
-  it('uses gentle feedback for partial answers', () => {
-    const text = composeStudySessionVoiceResponse(
-      makeResult({
-        action: 'REMEDIATE_AND_ASK',
+  it('uses gentle analysis for partial answers', () => {
+    const result = makeResult({
+      evaluation: {
+        ...makeResult().evaluation,
 
         correctness: 'PARTIAL',
 
-        remediationFocus: 'light absorption',
+        score: 0.5,
 
-        currentQuestion: 'Try explaining it again.',
-      }),
-    );
+        feedback: '',
+
+        missingPoints: [],
+      },
+
+      learningStep: {
+        ...makeResult().learningStep!,
+
+        action: 'REMEDIATE_AND_ASK',
+
+        remediation: {
+          kind: 'MISSING_POINTS',
+
+          focusPoints: ['light absorption'],
+
+          explanation: '',
+
+          keyTakeaways: [],
+
+          evidenceChunkIds: [],
+
+          generatorProvider: 'test',
+
+          generatorModel: 'test',
+
+          generatorVersion: 'test',
+        },
+      },
+    });
+
+    const text = composeStudySessionVoiceResponse(result);
 
     expect(text).toContain("You're close.");
 
     expect(text).toContain('The key idea is light absorption.');
+
+    expect(text).not.toContain('What comes next?');
   });
 
-  it('announces session completion concisely', () => {
-    const text = composeStudySessionVoiceResponse(
-      makeResult({
-        action: 'ADVANCE_CONCEPT',
+  it('announces completion without another question', () => {
+    const result = makeResult({
+      evaluation: {
+        ...makeResult().evaluation,
 
-        sessionStatus: 'COMPLETED',
+        feedback: '',
+      },
+
+      session: {
+        ...makeResult().session,
+
+        status: 'COMPLETED',
 
         currentQuestion: null,
-      }),
-    );
+      },
+    });
+
+    const text = composeStudySessionVoiceResponse(result);
 
     expect(text).toBe(
       "That's right. " + 'You have completed this study session.',
     );
   });
 
-  it('closes successful reviews concisely', () => {
-    const text = composeStudySessionVoiceResponse(
-      makeResult({
-        action: null,
+  it('keeps successful review feedback concise', () => {
+    const result = makeResult({
+      evaluation: {
+        ...makeResult().evaluation,
 
-        reviewCorrectness: 'CORRECT',
+        feedback:
+          'This evaluator feedback should not be read after a correct review answer.',
+      },
 
-        currentQuestion: null,
-      }),
-    );
+      learningStep: null,
+
+      reviewStep: {
+        correctness: 'CORRECT',
+
+        reviewOutcome: 'SECURE',
+
+        reviewRequired: false,
+
+        completed: true,
+      } as never,
+    });
+
+    const text = composeStudySessionVoiceResponse(result);
 
     expect(text).toBe(
       "That's right. " + 'Nice work. ' + 'We will revisit this concept later.',
     );
+  });
+
+  it('can mention an important missing point without speaking a future question', () => {
+    const result = makeResult({
+      evaluation: {
+        ...makeResult().evaluation,
+
+        correctness: 'PARTIAL',
+
+        feedback: 'You identified the broad idea.',
+
+        missingPoints: ['The residual is included in the training objective.'],
+      },
+    });
+
+    const text = composeStudySessionVoiceResponse(result);
+
+    expect(text).toContain('You identified the broad idea.');
+
+    expect(text).toContain(
+      'One important point to add is the residual is included in the training objective.',
+    );
+
+    expect(text).not.toContain('What comes next?');
   });
 });

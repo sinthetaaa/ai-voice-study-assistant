@@ -5,6 +5,8 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import "./session-state.css";
 import "./integration.css";
+import "./voice-study.css";
+import "./spoken-study.css";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",

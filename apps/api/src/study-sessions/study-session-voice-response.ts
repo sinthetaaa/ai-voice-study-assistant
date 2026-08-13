@@ -3,77 +3,94 @@ import { StudySessionAnswerResult } from './study-sessions.service';
 export function composeStudySessionVoiceResponse(
   result: StudySessionAnswerResult,
 ): string {
-  const nextQuestion = clean(result.session.currentQuestion?.prompt ?? '');
+  const evaluation = result.evaluation;
 
-  const shortFeedback = feedbackForCorrectness(result.evaluation.correctness);
+  const opening = feedbackForCorrectness(evaluation.correctness);
 
   /*
-   * REVIEW sessions deliberately bypass the
-   * normal LearningLoop.
+   * REVIEW sessions have their own completion
+   * semantics and deliberately bypass LearningLoop.
    */
   if (result.reviewStep) {
-    if (result.reviewStep.correctness === 'CORRECT') {
-      return joinParts(
-        "That's right.",
-        'Nice work. We will revisit this concept later.',
-      );
-    }
-
-    if (result.reviewStep.correctness === 'PARTIAL') {
-      return joinParts(
-        "You're close.",
-        'We will revisit this concept again soon.',
-      );
-    }
-
-    return joinParts('Not quite.', 'We will revisit this concept again soon.');
+    return composeReviewResponse(result);
   }
 
-  if (!result.learningStep) {
-    return joinParts(shortFeedback, nextQuestion);
-  }
+  const conciseFeedback = extractConciseFeedback(evaluation.feedback ?? '');
+
+  const missingPoint = clean(evaluation.missingPoints?.[0] ?? '');
+
+  const misconception = clean(evaluation.misconceptions?.[0] ?? '');
+
+  const remediation = extractCoreRemediation(
+    result.learningStep?.remediation ?? null,
+  );
 
   /*
-   * Session completion takes precedence over
-   * presenting another question.
+   * IMPORTANT PRODUCT RULE:
+   *
+   * Ryan explains only the answer that the learner
+   * just gave.
+   *
+   * Ryan MUST NOT append the next question here.
+   *
+   * The next question is spoken separately only
+   * after the learner presses "Next Question".
    */
   if (result.session.status === 'COMPLETED') {
-    return joinParts(shortFeedback, 'You have completed this study session.');
-  }
-
-  if (result.learningStep.action === 'REMEDIATE_AND_ASK') {
-    const coreRemediation = extractCoreRemediation(
-      result.learningStep.remediation,
-    );
-
     return joinParts(
-      shortFeedback,
-      coreRemediation,
-      nextQuestion ? `Let's try that again. ${nextQuestion}` : '',
+      opening,
+      conciseFeedback,
+      missingPoint ? composeMissingPoint(missingPoint) : '',
+      misconception ? composeMisconception(misconception) : '',
+      remediation,
+      'You have completed this study session.',
     );
   }
 
-  if (result.learningStep.action === 'ADVANCE_WITH_REVIEW') {
+  if (result.learningStep?.action === 'ADVANCE_WITH_REVIEW') {
     return joinParts(
-      shortFeedback,
-      'We will review this concept again later.',
-      nextQuestion ? `Let's move on. ${nextQuestion}` : '',
+      opening,
+      conciseFeedback,
+      missingPoint ? composeMissingPoint(missingPoint) : '',
+      misconception ? composeMisconception(misconception) : '',
+      remediation,
+      'We will revisit this concept again later.',
     );
   }
 
-  if (result.learningStep.action === 'ADVANCE_CONCEPT') {
-    return joinParts(
-      shortFeedback,
-      nextQuestion ? `Let's move on. ${nextQuestion}` : '',
-    );
-  }
-
-  /*
-   * ASK_QUESTION
-   */
   return joinParts(
-    shortFeedback,
-    nextQuestion ? `Next question. ${nextQuestion}` : '',
+    opening,
+    conciseFeedback,
+    missingPoint ? composeMissingPoint(missingPoint) : '',
+    misconception ? composeMisconception(misconception) : '',
+    remediation,
+  );
+}
+
+function composeReviewResponse(result: StudySessionAnswerResult): string {
+  if (!result.reviewStep) {
+    return '';
+  }
+
+  if (result.reviewStep.correctness === 'CORRECT') {
+    return joinParts(
+      "That's right.",
+      'Nice work. We will revisit this concept later.',
+    );
+  }
+
+  if (result.reviewStep.correctness === 'PARTIAL') {
+    return joinParts(
+      "You're close.",
+      extractConciseFeedback(result.evaluation.feedback ?? ''),
+      'We will revisit this concept again soon.',
+    );
+  }
+
+  return joinParts(
+    'Not quite.',
+    extractConciseFeedback(result.evaluation.feedback ?? ''),
+    'We will revisit this concept again soon.',
   );
 }
 
@@ -91,6 +108,42 @@ function feedbackForCorrectness(
   return 'Not quite.';
 }
 
+function extractConciseFeedback(feedback: string): string {
+  const cleaned = clean(feedback);
+
+  if (!cleaned) {
+    return '';
+  }
+
+  /*
+   * Ryan should sound like a tutor, not read an
+   * evaluation report word-for-word.
+   *
+   * Keep only the first useful sentence and cap it.
+   */
+  return ensureSentence(truncate(firstSentence(cleaned), 180));
+}
+
+function composeMissingPoint(value: string): string {
+  const normalized = normalizeForSpeech(value);
+
+  if (!normalized) {
+    return '';
+  }
+
+  return ensureSentence(`One important point to add is ${normalized}`);
+}
+
+function composeMisconception(value: string): string {
+  const normalized = normalizeForSpeech(value);
+
+  if (!normalized) {
+    return '';
+  }
+
+  return ensureSentence(`One thing to correct is ${normalized}`);
+}
+
 function extractCoreRemediation(
   remediation: {
     focusPoints: string[];
@@ -104,29 +157,35 @@ function extractCoreRemediation(
     return '';
   }
 
-  const focusPoint = clean(remediation.focusPoints[0] ?? '');
+  /*
+   * Prefer a compact pedagogical focus point.
+   *
+   * This keeps Ryan conversational even if the
+   * generated remediation explanation is long.
+   */
+  const focusPoint = clean(remediation.focusPoints?.[0] ?? '');
 
   if (focusPoint) {
-    return (
-      'The key idea is ' +
-      normalizeLeadingArticle(stripEndingPunctuation(focusPoint)) +
-      '.'
-    );
+    return ensureSentence(`The key idea is ${normalizeForSpeech(focusPoint)}`);
   }
 
-  const takeaway = clean(remediation.keyTakeaways[0] ?? '');
+  const takeaway = clean(remediation.keyTakeaways?.[0] ?? '');
 
   if (takeaway) {
     return ensureSentence(truncate(takeaway, 180));
   }
 
-  const explanation = clean(remediation.explanation);
+  const explanation = clean(remediation.explanation ?? '');
 
   if (!explanation) {
     return '';
   }
 
   return ensureSentence(truncate(firstSentence(explanation), 180));
+}
+
+function normalizeForSpeech(value: string): string {
+  return normalizeLeadingArticle(stripEndingPunctuation(clean(value)));
 }
 
 function firstSentence(value: string): string {

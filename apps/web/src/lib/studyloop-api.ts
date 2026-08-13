@@ -142,6 +142,198 @@ export type StudySession = {
   conceptFlow: SessionConcept[];
 };
 
+export type EvaluationResult = {
+  studyPackId: string;
+
+  conceptId: string;
+
+  questionId: string;
+
+  studySessionId: string | null;
+
+  attemptId: string;
+
+  evaluationId: string;
+
+  questionType: "RECALL" | "UNDERSTANDING" | "APPLICATION";
+
+  difficulty: "EASY" | "MEDIUM" | "HARD";
+
+  answerText: string;
+
+  score: number;
+
+  correctness: "CORRECT" | "PARTIAL" | "INCORRECT";
+
+  feedback: string;
+
+  missingPoints: string[];
+
+  misconceptions: string[];
+
+  evaluatorProvider: string;
+
+  evaluatorModel: string;
+
+  evaluatorVersion: string;
+
+  createdAt: string;
+
+  masteryStatus: "APPLIED" | "ALREADY_APPLIED" | "PENDING";
+
+  mastery: unknown;
+};
+
+export type LearningLoopRemediation = {
+  kind: "MISCONCEPTION" | "MISSING_POINTS" | "GENERAL_GAP";
+
+  focusPoints: string[];
+
+  explanation: string;
+
+  keyTakeaways: string[];
+
+  evidenceChunkIds: string[];
+
+  generatorProvider: string;
+
+  generatorModel: string;
+
+  generatorVersion: string;
+};
+
+export type LearningLoopStep = {
+  studyPackId: string;
+
+  conceptId: string;
+
+  conceptName: string;
+
+  evaluationId: string;
+
+  decisionVersion: string;
+
+  action:
+    | "ASK_QUESTION"
+    | "REMEDIATE_AND_ASK"
+    | "ADVANCE_CONCEPT"
+    | "ADVANCE_WITH_REVIEW";
+
+  reasonCode: string;
+
+  reason: string;
+
+  mastery: {
+    score: number;
+
+    evidenceWeight: number;
+  };
+
+  question: SessionQuestion | null;
+
+  remediation: LearningLoopRemediation | null;
+
+  nextQuestionType: "RECALL" | "UNDERSTANDING" | "APPLICATION" | null;
+
+  retestQuestionType: "RECALL" | "UNDERSTANDING" | "APPLICATION" | null;
+
+  reviewQuestionType: "RECALL" | "UNDERSTANDING" | "APPLICATION" | null;
+};
+
+export type StudySessionAnswer = {
+  evaluation: EvaluationResult;
+
+  learningStep: LearningLoopStep | null;
+
+  reviewStep: unknown | null;
+
+  session: StudySession;
+};
+
+export type QuestionSpeechResult = {
+  sessionId: string;
+
+  questionId: string;
+
+  text: string;
+
+  speech:
+    | {
+        status: "READY";
+
+        mimeType: "audio/wav";
+
+        audioBase64: string;
+
+        model: string | null;
+
+        speaker: string | null;
+
+        sampleRate: number | null;
+
+        durationSeconds: number | null;
+      }
+    | {
+        status: "FAILED";
+
+        mimeType: null;
+
+        audioBase64: null;
+
+        model: null;
+
+        speaker: null;
+
+        sampleRate: null;
+
+        durationSeconds: null;
+      };
+};
+
+export type VoiceAnswerResult = {
+  transcription: {
+    text: string;
+
+    [key: string]: unknown;
+  };
+
+  answer: StudySessionAnswer;
+
+  spokenResponseText: string;
+
+  speech:
+    | {
+        status: "READY";
+
+        mimeType: "audio/wav";
+
+        audioBase64: string;
+
+        model: string | null;
+
+        speaker: string | null;
+
+        sampleRate: number | null;
+
+        durationSeconds: number | null;
+      }
+    | {
+        status: "FAILED";
+
+        mimeType: null;
+
+        audioBase64: null;
+
+        model: null;
+
+        speaker: null;
+
+        sampleRate: null;
+
+        durationSeconds: null;
+      };
+};
+
 export class StudyLoopApiError extends Error {
   status: number;
 
@@ -181,9 +373,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       } else if (Array.isArray(body?.message)) {
         message = body.message.join(" ");
       }
-    } catch {
-      // Keep the fallback error.
-    }
+    } catch {}
 
     throw new StudyLoopApiError(message, response.status);
   }
@@ -219,11 +409,6 @@ export const studyLoopApi = {
       formData.append("files", file);
     });
 
-    /*
-     * Do not set Content-Type manually.
-     * The browser must create the multipart
-     * boundary itself.
-     */
     return request<UploadDocumentsResult>(
       `/study-packs/${encodeURIComponent(studyPackId)}/documents`,
       {
@@ -252,6 +437,30 @@ export const studyLoopApi = {
   getStudySession(sessionId: string) {
     return request<StudySession>(
       `/study-sessions/${encodeURIComponent(sessionId)}`,
+    );
+  },
+
+  speakStudySessionQuestion(sessionId: string) {
+    return request<QuestionSpeechResult>(
+      `/study-sessions/${encodeURIComponent(sessionId)}/question-speech`,
+      {
+        method: "POST",
+      },
+    );
+  },
+
+  answerStudySessionByVoice(sessionId: string, wavAudio: Blob) {
+    const formData = new FormData();
+
+    formData.append("audio", wavAudio, "answer.wav");
+
+    return request<VoiceAnswerResult>(
+      `/study-sessions/${encodeURIComponent(sessionId)}/voice-answer`,
+      {
+        method: "POST",
+
+        body: formData,
+      },
     );
   },
 };
