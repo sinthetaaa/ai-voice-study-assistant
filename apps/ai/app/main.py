@@ -18,6 +18,9 @@ from app.questions.router import (
 from app.remediation.router import (
     router as remediation_router,
 )
+from app.speech.router import (
+    router as speech_router,
+)
 
 
 app = FastAPI(
@@ -48,6 +51,9 @@ app.include_router(
 
 app.include_router(
     remediation_router,
+)
+app.include_router(
+    speech_router,
 )
 
 
