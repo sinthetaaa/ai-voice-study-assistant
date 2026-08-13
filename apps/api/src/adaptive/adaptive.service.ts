@@ -9,6 +9,12 @@ import {
   decideAdaptiveAction,
 } from './adaptive-policy';
 
+export type AdaptiveMasteryOverride = {
+  masteryAfter: number;
+
+  evidenceWeightAfter: number;
+};
+
 export type AdaptiveDecisionResult = {
   decisionVersion: string;
 
@@ -63,6 +69,7 @@ export class AdaptiveService {
 
   async decideForEvaluation(
     evaluationId: string,
+    masteryOverride?: AdaptiveMasteryOverride,
   ): Promise<AdaptiveDecisionResult> {
     /*
      * Ensure this evaluation has already affected
@@ -199,7 +206,20 @@ export class AdaptiveService {
      * produce a microscopic negative number near
      * zero, so clamp it defensively.
      */
-    const evidenceWeightAfter = Math.max(0, rawEvidenceWeightAfter);
+    const lifetimeEvidenceWeightAfter = Math.max(0, rawEvidenceWeightAfter);
+
+    /*
+     * Normal StudySession answers use SESSION mastery for
+     * adaptive decisions.
+     *
+     * Stateless/manual learning-loop calls continue using
+     * the lifetime MasteryEvent state.
+     */
+    const masteryAfter =
+      masteryOverride?.masteryAfter ?? masteryEvent.masteryAfter;
+
+    const evidenceWeightAfter =
+      masteryOverride?.evidenceWeightAfter ?? lifetimeEvidenceWeightAfter;
 
     /*
      * The policy itself is pure and deterministic.
@@ -225,7 +245,7 @@ export class AdaptiveService {
 
       misconceptions: evaluation.misconceptions,
 
-      masteryAfter: masteryEvent.masteryAfter,
+      masteryAfter,
 
       evidenceWeightAfter,
     });
@@ -247,7 +267,7 @@ export class AdaptiveService {
 
       correctness: evaluation.correctness,
 
-      masteryAfter: masteryEvent.masteryAfter,
+      masteryAfter,
 
       evidenceWeightAfter,
 

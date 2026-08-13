@@ -223,6 +223,42 @@ model QuestionSource {
   @@index([chunkId])
 }
 
+model SessionMasteryEvent {
+  id String @id @default(uuid())
+
+  sessionId String
+  conceptId String
+
+  progress SessionConceptProgress @relation(fields: [sessionId, conceptId], references: [sessionId, conceptId], onDelete: Cascade)
+
+  // A single AnswerEvaluation may update this session-local
+  // mastery state at most once.
+  evaluationId String @unique
+
+  score  Float
+  weight Float
+
+  alphaBefore Float
+  betaBefore  Float
+
+  alphaAfter Float
+  betaAfter  Float
+
+  masteryBefore Float
+  masteryAfter  Float
+
+  evidenceWeightBefore Float
+  evidenceWeightAfter  Float
+
+  attemptCountBefore Int
+  attemptCountAfter  Int
+
+  createdAt DateTime @default(now())
+
+  @@index([sessionId, conceptId])
+  @@index([createdAt])
+}
+
 model QuestionAttempt {
   id String @id @default(uuid())
 
@@ -443,6 +479,25 @@ model SessionConceptProgress {
   // ADVANCE_WITH_REVIEW can allow normal progression while preserving
   // the fact that this concept should be revisited later.
   reviewRequired Boolean @default(false)
+
+  // Session-local mastery.
+  //
+  // This state belongs ONLY to this StudySession + Concept pair.
+  // It never inherits the previous session's visible mastery.
+  //
+  // Internally we use the same neutral Beta(1, 1) prior as lifetime
+  // mastery, but sessionMasteryScore intentionally begins at 0 because
+  // the fresh session has not yet observed any learner evidence.
+  sessionAlpha Float @default(1.0)
+  sessionBeta  Float @default(1.0)
+
+  sessionMasteryScore Float @default(0.0)
+
+  sessionEvidenceWeight Float @default(0.0)
+
+  sessionAttemptCount Int @default(0)
+
+  masteryEvents SessionMasteryEvent[]
 
   startedAt   DateTime?
   completedAt DateTime?

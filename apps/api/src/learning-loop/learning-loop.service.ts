@@ -8,7 +8,10 @@ import {
   AdaptiveQuestionType,
   AdaptiveReasonCode,
 } from '../adaptive/adaptive-policy';
-import { AdaptiveService } from '../adaptive/adaptive.service';
+import {
+  AdaptiveMasteryOverride,
+  AdaptiveService,
+} from '../adaptive/adaptive.service';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   RemediationResult,
@@ -97,6 +100,7 @@ export class LearningLoopService {
     studyPackId: string,
     conceptId: string,
     evaluationId: string,
+    masteryOverride?: AdaptiveMasteryOverride,
   ): Promise<LearningLoopNextStepResult> {
     /*
      * Scope the evaluation before running any
@@ -162,8 +166,10 @@ export class LearningLoopService {
      * historically reproducible even if the
      * learner has completed later attempts.
      */
-    const adaptive =
-      await this.adaptiveService.decideForEvaluation(evaluationId);
+    const adaptive = await this.adaptiveService.decideForEvaluation(
+      evaluationId,
+      masteryOverride,
+    );
 
     if (adaptive.conceptId !== conceptId) {
       throw new InternalServerErrorException(

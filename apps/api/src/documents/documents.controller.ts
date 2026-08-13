@@ -25,7 +25,8 @@ export class DocumentsController {
       storage: memoryStorage(),
 
       limits: {
-        fileSize: 20 * 1024 * 1024,
+        // Maximum supported document size: 50 MB per file.
+        fileSize: 50 * 1024 * 1024,
       },
 
       fileFilter: (_request, file, callback) => {

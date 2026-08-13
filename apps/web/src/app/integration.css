@@ -1,0 +1,204 @@
+/* ============================================================
+   REAL BACKEND INTEGRATION STATES
+============================================================ */
+
+.upload-button:disabled,
+.continue-button:disabled {
+  cursor: not-allowed;
+}
+
+.upload-state {
+  margin-top: 24px;
+
+  min-height: 42px;
+
+  padding: 0 15px;
+
+  display: inline-flex;
+
+  align-items: center;
+
+  gap: 10px;
+
+  border-radius: 999px;
+
+  color: #858582;
+
+  border:
+    1px solid
+    rgba(255,255,255,0.08);
+
+  background:
+    rgba(255,255,255,0.018);
+
+  font-size: 10px;
+}
+
+.upload-state-ready {
+  color: #c9c9c6;
+
+  border-color:
+    rgba(255,255,255,0.15);
+
+  box-shadow:
+    0 0 22px
+    rgba(255,255,255,0.035);
+}
+
+.small-spinner {
+  width: 12px;
+  height: 12px;
+
+  flex: none;
+
+  border-radius: 50%;
+
+  border:
+    1px solid
+    rgba(255,255,255,0.16);
+
+  border-top-color:
+    rgba(255,255,255,0.86);
+
+  animation:
+    integrationSpin
+    800ms
+    linear
+    infinite;
+}
+
+.ready-dot {
+  width: 7px;
+  height: 7px;
+
+  flex: none;
+
+  border-radius: 50%;
+
+  background:
+    #f0f0ed;
+
+  box-shadow:
+    0 0 12px
+    rgba(255,255,255,0.42);
+}
+
+@keyframes integrationSpin {
+  to {
+    transform:
+      rotate(360deg);
+  }
+}
+
+.upload-error {
+  margin-top: 18px;
+
+  max-width: 620px;
+
+  color: #a7a7a4;
+
+  font-size: 10px;
+
+  line-height: 1.6;
+
+  padding:
+    12px
+    14px;
+
+  border-left:
+    1px solid
+    rgba(255,255,255,0.25);
+
+  background:
+    rgba(255,255,255,0.018);
+}
+
+.document-status {
+  margin-top: 3px;
+
+  letter-spacing: 0.08em;
+
+  opacity: 0.75;
+}
+
+.flow-empty {
+  padding-top: 24px;
+
+  color: #555552;
+
+  font-size: 9px;
+}
+
+/* Review-required flow state */
+
+.flow-item.review {
+  color: #b7b7b4;
+}
+
+.flow-item.review .flow-node {
+  border-color:
+    rgba(255,255,255,0.36);
+
+  box-shadow:
+    0 0 13px
+    rgba(255,255,255,0.11);
+}
+
+/* ------------------------------------------------------------
+   Study route states
+------------------------------------------------------------ */
+
+.session-error-state,
+.session-complete-state {
+  position: relative;
+
+  z-index: 2;
+
+  min-height:
+    calc(100vh - 150px);
+
+  max-width: 720px;
+
+  display: flex;
+
+  flex-direction: column;
+
+  align-items: flex-start;
+
+  justify-content: center;
+}
+
+.session-error-state h1,
+.session-complete-state h1 {
+  margin: 0;
+
+  color: #efefec;
+
+  font-size:
+    clamp(
+      46px,
+      5vw,
+      78px
+    );
+
+  line-height: 0.98;
+
+  font-weight: 620;
+
+  letter-spacing: -0.06em;
+}
+
+.session-error-state > p:not(.section-kicker) {
+  max-width: 520px;
+
+  margin:
+    22px
+    0
+    34px;
+
+  color: #71716e;
+
+  font-size: 12px;
+
+  line-height: 1.7;
+}

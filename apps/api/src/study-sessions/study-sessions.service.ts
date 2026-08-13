@@ -21,7 +21,14 @@ import {
   ReviewAnswerCorrectness,
 } from './review-completion-policy';
 import { scheduleConceptReview } from './review-scheduling-policy';
-import { classifyStudyReadiness } from './study-session-readiness';
+import {
+  INITIAL_SESSION_ALPHA,
+  INITIAL_SESSION_ATTEMPT_COUNT,
+  INITIAL_SESSION_BETA,
+  INITIAL_SESSION_EVIDENCE_WEIGHT,
+  INITIAL_SESSION_MASTERY_SCORE,
+  updateSessionMastery,
+} from './session-mastery';
 
 type SessionConceptDifficulty = 'FOUNDATIONAL' | 'INTERMEDIATE' | 'ADVANCED';
 
@@ -42,6 +49,14 @@ export type StudySessionQuestion = {
   prompt: string;
 };
 
+export type StudySessionMastery = {
+  score: number;
+
+  evidenceWeight: number;
+
+  attemptCount: number;
+};
+
 export type StudySessionCurrentConcept = {
   id: string;
 
@@ -56,6 +71,26 @@ export type StudySessionCurrentConcept = {
   status: SessionConceptStatus;
 
   reviewRequired: boolean;
+
+  mastery: StudySessionMastery;
+};
+
+export type StudySessionConceptFlowItem = {
+  id: string;
+
+  name: string;
+
+  difficulty: SessionConceptDifficulty;
+
+  importance: number;
+
+  position: number;
+
+  status: SessionConceptStatus;
+
+  reviewRequired: boolean;
+
+  mastery: StudySessionMastery;
 };
 
 export type StudySessionStateResult = {
@@ -84,6 +119,8 @@ export type StudySessionStateResult = {
   currentConcept: StudySessionCurrentConcept | null;
 
   currentQuestion: StudySessionQuestion | null;
+
+  conceptFlow: StudySessionConceptFlowItem[];
 };
 
 export type StartStudySessionResult = StudySessionStateResult & {
@@ -230,25 +267,22 @@ export class StudySessionsService {
       },
     });
 
-    const studyConcepts: SessionPlanConcept[] = concepts.filter((concept) => {
-      const readiness = classifyStudyReadiness(concept.mastery);
-
-      /*
-       * Once a concept has been advanced into
-       * delayed review, the review subsystem owns
-       * its next exposure.
-       *
-       * Do not immediately recycle it into a new
-       * NORMAL session merely because its mastery
-       * score is still below the secure threshold.
-       */
-      return readiness.needsNormalStudy && !concept.mastery?.reviewDueAt;
-    });
+    /*
+     * A NORMAL session is intentionally fresh.
+     *
+     * Lifetime ConceptMastery remains intact for
+     * long-term learning history and scheduled reviews,
+     * but it does NOT decide whether a concept is allowed
+     * into this newly started session.
+     *
+     * Session-local mastery begins from zero below.
+     */
+    const studyConcepts: SessionPlanConcept[] = concepts;
 
     if (studyConcepts.length === 0) {
       throw new BadRequestException(
         `Study Pack ${studyPackId} has no ` +
-          'active concepts requiring normal study.',
+          'active READY-backed concepts available for study.',
       );
     }
 
@@ -291,10 +325,29 @@ export class StudySessionsService {
      * triggering question generation for an
      * entire large Study Pack.
      */
-    const selectedConcepts = orderedConcepts.slice(
-      0,
-      StudySessionsService.NORMAL_SESSION_CONCEPT_LIMIT,
+    /*
+     * Every fresh NORMAL session receives a fresh starting
+     * concept/question.
+     *
+     * Randomness happens ONCE on the server when the session is
+     * created. The resulting currentConceptId/currentQuestionId
+     * are persisted, so refreshing the browser does not change
+     * the learner's current question.
+     */
+    const firstConceptIndex = Math.floor(
+      Math.random() * orderedConcepts.length,
     );
+
+    const firstSelectedConcept = orderedConcepts[firstConceptIndex];
+
+    const remainingOrderedConcepts = orderedConcepts.filter(
+      (concept) => concept.id !== firstSelectedConcept.id,
+    );
+
+    const selectedConcepts = [
+      firstSelectedConcept,
+      ...remainingOrderedConcepts,
+    ].slice(0, StudySessionsService.NORMAL_SESSION_CONCEPT_LIMIT);
 
     const preparedConcepts: PreparedSessionConcept[] = [];
 
@@ -373,6 +426,16 @@ export class StudySessionsService {
           status: 'PENDING',
 
           reviewRequired: false,
+
+          sessionAlpha: INITIAL_SESSION_ALPHA,
+
+          sessionBeta: INITIAL_SESSION_BETA,
+
+          sessionMasteryScore: INITIAL_SESSION_MASTERY_SCORE,
+
+          sessionEvidenceWeight: INITIAL_SESSION_EVIDENCE_WEIGHT,
+
+          sessionAttemptCount: INITIAL_SESSION_ATTEMPT_COUNT,
         })),
       });
 
@@ -800,13 +863,35 @@ export class StudySessionsService {
     }
 
     /*
-     * NORMAL sessions preserve the existing
-     * adaptive LearningLoop behavior unchanged.
+     * NORMAL sessions update TWO independent mastery states:
+     *
+     * 1. lifetime ConceptMastery
+     *    - already updated by EvaluationsService
+     *    - survives across sessions
+     *    - powers delayed review / long-term history
+     *
+     * 2. session-local mastery
+     *    - starts from 0 every new session
+     *    - controls the visible mastery ring
+     *    - drives adaptive decisions inside THIS session
      */
+    const sessionMastery = await this.applySessionMastery(
+      session.id,
+      conceptId,
+      evaluation.evaluationId,
+      evaluation.questionType,
+      evaluation.score,
+    );
+
     const learningStep = await this.learningLoopService.getNextStep(
       session.studyPackId,
       conceptId,
       evaluation.evaluationId,
+      {
+        masteryAfter: sessionMastery.masteryAfter,
+
+        evidenceWeightAfter: sessionMastery.evidenceWeightAfter,
+      },
     );
 
     await this.applyLearningStep(
@@ -887,6 +972,24 @@ export class StudySessionsService {
             status: true,
 
             reviewRequired: true,
+
+            sessionMasteryScore: true,
+
+            sessionEvidenceWeight: true,
+
+            sessionAttemptCount: true,
+
+            concept: {
+              select: {
+                id: true,
+
+                name: true,
+
+                difficulty: true,
+
+                importance: true,
+              },
+            },
           },
         },
       },
@@ -931,6 +1034,14 @@ export class StudySessionsService {
             status: currentProgress.status,
 
             reviewRequired: currentProgress.reviewRequired,
+
+            mastery: {
+              score: currentProgress.sessionMasteryScore,
+
+              evidenceWeight: currentProgress.sessionEvidenceWeight,
+
+              attemptCount: currentProgress.sessionAttemptCount,
+            },
           }
         : null;
 
@@ -945,6 +1056,31 @@ export class StudySessionsService {
           prompt: session.currentQuestion.prompt,
         }
       : null;
+
+    const conceptFlow: StudySessionConceptFlowItem[] =
+      session.conceptProgress.map((progress) => ({
+        id: progress.concept.id,
+
+        name: progress.concept.name,
+
+        difficulty: progress.concept.difficulty,
+
+        importance: progress.concept.importance,
+
+        position: progress.position,
+
+        status: progress.status,
+
+        reviewRequired: progress.reviewRequired,
+
+        mastery: {
+          score: progress.sessionMasteryScore,
+
+          evidenceWeight: progress.sessionEvidenceWeight,
+
+          attemptCount: progress.sessionAttemptCount,
+        },
+      }));
 
     return {
       sessionId: session.id,
@@ -972,7 +1108,159 @@ export class StudySessionsService {
       currentConcept,
 
       currentQuestion,
+
+      conceptFlow,
     };
+  }
+
+  private async applySessionMastery(
+    sessionId: string,
+    conceptId: string,
+    evaluationId: string,
+    questionType: 'RECALL' | 'UNDERSTANDING' | 'APPLICATION',
+    score: number,
+  ) {
+    return this.prisma.$transaction(async (transaction) => {
+      /*
+       * Lock the session/concept progress row so two concurrent
+       * answer-processing requests cannot apply evidence against
+       * the same old session-local mastery state.
+       */
+      await transaction.$queryRaw`
+        SELECT "id"
+        FROM "SessionConceptProgress"
+        WHERE "sessionId" = ${sessionId}
+          AND "conceptId" = ${conceptId}
+        FOR UPDATE
+      `;
+
+      const progress = await transaction.sessionConceptProgress.findUnique({
+        where: {
+          sessionId_conceptId: {
+            sessionId,
+
+            conceptId,
+          },
+        },
+
+        select: {
+          sessionAlpha: true,
+
+          sessionBeta: true,
+
+          sessionMasteryScore: true,
+
+          sessionEvidenceWeight: true,
+
+          sessionAttemptCount: true,
+        },
+      });
+
+      if (!progress) {
+        throw new InternalServerErrorException(
+          `StudySession ${sessionId} has no ` +
+            `SessionConceptProgress for concept ${conceptId}`,
+        );
+      }
+
+      /*
+       * Idempotency by evaluationId.
+       *
+       * If this exact evaluated answer has already updated
+       * session mastery, return the original transition.
+       */
+      const existingEvent = await transaction.sessionMasteryEvent.findUnique({
+        where: {
+          evaluationId,
+        },
+      });
+
+      if (existingEvent) {
+        return {
+          applied: false,
+
+          ...existingEvent,
+        };
+      }
+
+      const update = updateSessionMastery(
+        {
+          alpha: progress.sessionAlpha,
+
+          beta: progress.sessionBeta,
+
+          masteryScore: progress.sessionMasteryScore,
+
+          evidenceWeight: progress.sessionEvidenceWeight,
+
+          attemptCount: progress.sessionAttemptCount,
+        },
+        questionType,
+        score,
+      );
+
+      await transaction.sessionConceptProgress.update({
+        where: {
+          sessionId_conceptId: {
+            sessionId,
+
+            conceptId,
+          },
+        },
+
+        data: {
+          sessionAlpha: update.alphaAfter,
+
+          sessionBeta: update.betaAfter,
+
+          sessionMasteryScore: update.masteryAfter,
+
+          sessionEvidenceWeight: update.evidenceWeightAfter,
+
+          sessionAttemptCount: update.attemptCountAfter,
+        },
+      });
+
+      const event = await transaction.sessionMasteryEvent.create({
+        data: {
+          sessionId,
+
+          conceptId,
+
+          evaluationId,
+
+          score,
+
+          weight: update.weight,
+
+          alphaBefore: update.alphaBefore,
+
+          betaBefore: update.betaBefore,
+
+          alphaAfter: update.alphaAfter,
+
+          betaAfter: update.betaAfter,
+
+          masteryBefore: update.masteryBefore,
+
+          masteryAfter: update.masteryAfter,
+
+          evidenceWeightBefore: update.evidenceWeightBefore,
+
+          evidenceWeightAfter: update.evidenceWeightAfter,
+
+          attemptCountBefore: update.attemptCountBefore,
+
+          attemptCountAfter: update.attemptCountAfter,
+        },
+      });
+
+      return {
+        applied: true,
+
+        ...event,
+      };
+    });
   }
 
   private async completeReviewSession(

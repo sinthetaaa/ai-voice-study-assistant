@@ -1,0 +1,581 @@
+/* ============================================================
+   VOICE ORB — EXACT STATE BEHAVIOUR
+============================================================ */
+
+.voice-orb {
+  position: relative;
+
+  width: 108px;
+  height: 108px;
+
+  margin-top: 62px;
+
+  padding: 0;
+
+  display: grid;
+
+  place-items: center;
+
+  overflow: visible;
+
+  isolation: isolate;
+
+  border-radius: 50%;
+
+  color: #ffffff;
+
+  border:
+    1px solid
+    rgba(255,255,255,0.48);
+
+  background:
+    radial-gradient(
+      circle at 34% 25%,
+      rgba(255,255,255,0.24),
+      rgba(255,255,255,0.075) 28%,
+      rgba(255,255,255,0.014) 66%,
+      rgba(0,0,0,0.82)
+    );
+
+  box-shadow:
+    inset 0 1px 1px rgba(255,255,255,0.3),
+    inset 0 -15px 38px rgba(0,0,0,0.7),
+    0 0 28px rgba(255,255,255,0.12),
+    0 0 80px rgba(255,255,255,0.035);
+
+  transition:
+    transform 220ms ease,
+    box-shadow 220ms ease,
+    border-color 220ms ease;
+}
+
+.voice-orb::before,
+.voice-orb::after {
+  content: "";
+
+  position: absolute;
+
+  border-radius: 50%;
+
+  pointer-events: none;
+}
+
+.voice-orb::before {
+  inset: -13px;
+
+  border:
+    1px solid
+    rgba(255,255,255,0.09);
+}
+
+.voice-orb::after {
+  inset: -30px;
+
+  border:
+    1px solid
+    rgba(255,255,255,0.035);
+}
+
+.voice-orb-inner {
+  position: absolute;
+
+  inset: 10px;
+
+  border-radius: 50%;
+
+  background:
+    radial-gradient(
+      circle,
+      rgba(255,255,255,0.11),
+      transparent 68%
+    );
+
+  filter: blur(7px);
+
+  pointer-events: none;
+}
+
+.voice-orb:hover {
+  transform: scale(1.045);
+
+  border-color:
+    rgba(255,255,255,0.72);
+
+  box-shadow:
+    inset 0 1px 1px rgba(255,255,255,0.34),
+    inset 0 -15px 38px rgba(0,0,0,0.7),
+    0 0 38px rgba(255,255,255,0.17),
+    0 0 95px rgba(255,255,255,0.05);
+}
+
+/*
+ * BEFORE CLICK
+ *
+ * microphone is visible.
+ * no waveform.
+ */
+
+.voice-orb-mic {
+  position: relative;
+
+  z-index: 4;
+
+  width: 31px;
+  height: 31px;
+
+  fill: none;
+
+  stroke: currentColor;
+
+  stroke-width: 1.45;
+
+  stroke-linecap: round;
+
+  opacity: 0.94;
+
+  filter:
+    drop-shadow(
+      0 0 8px
+      rgba(255,255,255,0.24)
+    );
+}
+
+/*
+ * AFTER CLICK
+ *
+ * microphone disappears.
+ * waveform takes its place.
+ */
+
+.orb-wave {
+  position: relative;
+
+  z-index: 4;
+
+  width: 74px;
+  height: 34px;
+
+  overflow: visible;
+
+  filter:
+    drop-shadow(
+      0 0 7px
+      rgba(255,255,255,0.34)
+    );
+}
+
+/*
+ * Active recording glow exists even
+ * when the user is silent.
+ */
+
+.voice-orb.recording {
+  box-shadow:
+    inset 0 1px 1px rgba(255,255,255,0.38),
+    inset 0 -15px 38px rgba(0,0,0,0.7),
+    0 0 40px rgba(255,255,255,0.18),
+    0 0 105px rgba(255,255,255,0.06);
+
+  animation:
+    orbBreathing
+    2.25s
+    ease-in-out
+    infinite;
+}
+
+/*
+ * Speech adds a slightly stronger
+ * living glow.
+ */
+
+.voice-orb.recording.speaking {
+  box-shadow:
+    inset 0 1px 1px rgba(255,255,255,0.42),
+    inset 0 -15px 38px rgba(0,0,0,0.68),
+    0 0 48px rgba(255,255,255,0.24),
+    0 0 120px rgba(255,255,255,0.075);
+}
+
+.voice-orb.recording::before {
+  animation:
+    orbOuterPulse
+    1.8s
+    ease-out
+    infinite;
+}
+
+.voice-orb.recording::after {
+  animation:
+    orbOuterPulse
+    1.8s
+    ease-out
+    0.45s
+    infinite;
+}
+
+@keyframes orbBreathing {
+  50% {
+    transform:
+      scale(1.035);
+  }
+}
+
+@keyframes orbOuterPulse {
+  from {
+    opacity: 0.5;
+
+    transform:
+      scale(0.9);
+  }
+
+  to {
+    opacity: 0;
+
+    transform:
+      scale(1.23);
+  }
+}
+
+/* ============================================================
+   MASTERY — ALWAYS STARTS AT 0%
+============================================================ */
+
+.mastery-ring {
+  position: relative;
+
+  width: 158px;
+  height: 158px;
+
+  margin:
+    30px
+    auto
+    0;
+
+  padding: 7px;
+
+  display: grid;
+
+  place-items: center;
+
+  border-radius: 50%;
+
+  filter:
+    drop-shadow(
+      0 0 18px
+      rgba(255,255,255,0.08)
+    );
+
+  transition:
+    background
+    650ms
+    cubic-bezier(
+      0.16,
+      1,
+      0.3,
+      1
+    );
+}
+
+.mastery-ring::after {
+  content: "";
+
+  position: absolute;
+
+  inset: 7px;
+
+  border-radius: 50%;
+
+  background:
+    radial-gradient(
+      circle at 38% 27%,
+      rgba(255,255,255,0.055),
+      #070707 68%
+    );
+
+  box-shadow:
+    inset 0 1px
+    rgba(255,255,255,0.075);
+}
+
+.mastery-ring-inner {
+  position: relative;
+
+  z-index: 2;
+
+  display: flex;
+
+  align-items: baseline;
+}
+
+.mastery-ring-inner strong {
+  color: #f1f1ee;
+
+  font-size: 42px;
+
+  font-weight: 430;
+
+  letter-spacing: -0.06em;
+}
+
+.mastery-ring-inner span {
+  margin-left: 3px;
+
+  color: #868683;
+
+  font-size: 13px;
+}
+
+/* ============================================================
+   FRESH SESSION FLOW
+============================================================ */
+
+.flow-item {
+  transition:
+    color 220ms ease,
+    transform 220ms ease,
+    opacity 220ms ease;
+}
+
+.flow-item.active {
+  color: #f1f1ee;
+
+  transform:
+    translateX(2px);
+}
+
+.flow-item.active .flow-node {
+  background:
+    linear-gradient(
+      180deg,
+      #ffffff,
+      #d9d9d6
+    );
+
+  border-color:
+    rgba(255,255,255,0.95);
+
+  box-shadow:
+    0 0 17px
+      rgba(255,255,255,0.28),
+    0 0 44px
+      rgba(255,255,255,0.1);
+
+  animation:
+    activeFlowGlow
+    2.5s
+    ease-in-out
+    infinite alternate;
+}
+
+.flow-item.active .flow-label {
+  text-shadow:
+    0 0 15px
+    rgba(255,255,255,0.14);
+}
+
+.flow-item.waiting {
+  opacity: 0.3;
+}
+
+@keyframes activeFlowGlow {
+  to {
+    box-shadow:
+      0 0 24px
+        rgba(255,255,255,0.36),
+      0 0 58px
+        rgba(255,255,255,0.12);
+  }
+}
+
+/* ============================================================
+   FRESH SESSION LOADER
+============================================================ */
+
+.session-loading {
+  min-height: 100vh;
+
+  display: grid;
+
+  place-items: center;
+}
+
+.session-loading span {
+  width: 42px;
+  height: 42px;
+
+  border-radius: 50%;
+
+  border:
+    1px solid
+    rgba(255,255,255,0.12);
+
+  border-top-color:
+    rgba(255,255,255,0.9);
+
+  animation:
+    sessionSpin
+    900ms
+    linear
+    infinite;
+
+  box-shadow:
+    0 0 30px
+    rgba(255,255,255,0.06);
+}
+
+@keyframes sessionSpin {
+  to {
+    transform:
+      rotate(360deg);
+  }
+}
+
+/* ============================================================
+   TEMPORARY ANALYSIS PLACEHOLDER
+============================================================ */
+
+.analysis-placeholder {
+  min-height: 330px;
+
+  display: flex;
+
+  flex-direction: column;
+
+  align-items: center;
+
+  justify-content: center;
+
+  text-align: center;
+}
+
+.analysis-placeholder-orb {
+  width: 58px;
+  height: 58px;
+
+  display: grid;
+
+  place-items: center;
+
+  border-radius: 50%;
+
+  border:
+    1px solid
+    rgba(255,255,255,0.2);
+
+  box-shadow:
+    0 0 30px
+    rgba(255,255,255,0.07);
+}
+
+.analysis-placeholder-orb span {
+  width: 8px;
+  height: 8px;
+
+  border-radius: 50%;
+
+  background:
+    #efefec;
+
+  box-shadow:
+    0 0 14px
+    rgba(255,255,255,0.45);
+}
+
+.analysis-placeholder h2 {
+  margin:
+    26px
+    0
+    0;
+
+  color:
+    #e8e8e5;
+
+  font-size:
+    26px;
+
+  font-weight:
+    500;
+
+  letter-spacing:
+    -0.035em;
+}
+
+.analysis-placeholder p {
+  max-width:
+    440px;
+
+  margin:
+    14px
+    0
+    0;
+
+  color:
+    #6d6d69;
+
+  font-size:
+    11px;
+
+  line-height:
+    1.7;
+}
+
+.analysis-next-copy {
+  max-width:
+    450px;
+
+  color:
+    #777773;
+
+  font-size:
+    10px;
+
+  line-height:
+    1.7;
+}
+
+/* ============================================================
+   RAPID VIVA ANSWER STATE
+============================================================ */
+
+.viva-answer-received {
+  margin-top:
+    48px;
+
+  display: flex;
+
+  flex-direction: column;
+
+  align-items: center;
+}
+
+.viva-received-dot {
+  width: 8px;
+  height: 8px;
+
+  border-radius: 50%;
+
+  background:
+    #f0f0ed;
+
+  box-shadow:
+    0 0 16px
+      rgba(255,255,255,0.45);
+}
+
+.viva-answer-received p {
+  margin:
+    14px
+    0
+    0;
+
+  color:
+    #777773;
+
+  font-size:
+    10px;
+}
+
+.viva-answer-received .rapid-next {
+  margin-top:
+    28px;
+}
