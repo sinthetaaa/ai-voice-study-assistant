@@ -392,6 +392,14 @@ model StudySession {
 
   status StudySessionStatus @default(ACTIVE)
 
+  // NORMAL sessions run the adaptive learning
+  // ladder across a bounded concept batch.
+  //
+  // REVIEW sessions contain a scheduled review
+  // concept and use review-specific completion
+  // logic rather than the normal learning ladder.
+  kind StudySessionKind @default(NORMAL)
+
   // The concept and question currently presented to the learner.
   //
   // Both become null when the session is complete.
@@ -412,6 +420,7 @@ model StudySession {
 
   @@index([studyPackId])
   @@index([status])
+  @@index([kind])
   @@index([currentConceptId])
   @@index([currentQuestionId])
   @@index([startedAt])
@@ -489,6 +498,11 @@ enum StudySessionStatus {
   ACTIVE
   COMPLETED
   ABANDONED
+}
+
+enum StudySessionKind {
+  NORMAL
+  REVIEW
 }
 
 enum SessionConceptStatus {
