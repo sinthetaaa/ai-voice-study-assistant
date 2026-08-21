@@ -7,6 +7,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { LocalStorageService } from '../storage/local-storage.service';
 import { ChunkingService } from '../chunking/chunking.service';
 import { EmbeddingClientService } from '../embeddings/embedding-client.service';
+import { ConceptsService } from '../concepts/concepts.service';
 
 import {
   DOCUMENT_INGESTION_QUEUE,
@@ -33,6 +34,8 @@ export class IngestionProcessor extends WorkerHost {
     private readonly chunkingService: ChunkingService,
 
     private readonly embeddingClient: EmbeddingClientService,
+
+    private readonly conceptsService: ConceptsService,
   ) {
     super();
   }
@@ -298,6 +301,42 @@ export class IngestionProcessor extends WorkerHost {
 
       this.logger.log(
         `Finished ${document.originalName}: ${parsed.units.length} units, ${chunkCount} chunks, ${embeddingResult.embeddings.length} embeddings`,
+      );
+
+      /*
+       * ------------------------------------------------
+       * 9. Extract + persist concepts
+       * ------------------------------------------------
+       *
+       * Document READY means parsing, chunking and
+       * embeddings are complete.
+       *
+       * Study readiness, however, requires ACTIVE
+       * concepts. Generate them automatically for
+       * this document so a normal upload flows all
+       * the way into a usable study session.
+       *
+       * Use document-scoped generation here rather
+       * than regenerating the whole Study Pack.
+       * This also makes multi-document uploads safer:
+       * each completed ingestion contributes its own
+       * concept provenance.
+       */
+
+      this.logger.log(
+        `Generating concepts for ${document.originalName} (${document.id})`,
+      );
+
+      const conceptResult =
+        await this.conceptsService.generateStudyPackConcepts(
+          document.studyPackId,
+          document.id,
+        );
+
+      this.logger.log(
+        `Concept generation finished for ${document.originalName}: ` +
+          `${conceptResult.conceptCount} extracted, ` +
+          `${conceptResult.persistedConceptCount} active concepts`,
       );
     } catch (error) {
       const message =

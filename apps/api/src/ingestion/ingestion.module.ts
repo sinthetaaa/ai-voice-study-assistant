@@ -5,6 +5,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { StorageModule } from '../storage/storage.module';
 import { ChunkingModule } from '../chunking/chunking.module';
 import { EmbeddingsModule } from '../embeddings/embeddings.module';
+import { ConceptsModule } from '../concepts/concepts.module';
 
 import { IngestionQueueService } from './ingestion-queue.service';
 import { IngestionProcessor } from './ingestion.processor';
@@ -19,6 +20,8 @@ import { DOCUMENT_INGESTION_QUEUE } from './ingestion.constants';
     ChunkingModule,
 
     EmbeddingsModule,
+
+    ConceptsModule,
 
     BullModule.forRootAsync({
       imports: [ConfigModule],
