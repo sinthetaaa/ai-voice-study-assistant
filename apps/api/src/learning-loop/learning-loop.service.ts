@@ -13,6 +13,7 @@ import {
   AdaptiveService,
 } from '../adaptive/adaptive.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { QuestionsService } from '../questions/questions.service';
 import {
   RemediationResult,
   RemediationService,
@@ -94,6 +95,8 @@ export class LearningLoopService {
     private readonly adaptiveService: AdaptiveService,
 
     private readonly remediationService: RemediationService,
+
+    private readonly questionsService: QuestionsService,
   ) {}
 
   async getNextStep(
@@ -130,6 +133,8 @@ export class LearningLoopService {
 
         attempt: {
           select: {
+            promptSnapshot: true,
+
             question: {
               select: {
                 concept: {
@@ -166,6 +171,8 @@ export class LearningLoopService {
      * historically reproducible even if the
      * learner has completed later attempts.
      */
+    const evaluationPrompt = scopedEvaluation.attempt.promptSnapshot;
+
     const adaptive = await this.adaptiveService.decideForEvaluation(
       evaluationId,
       masteryOverride,
@@ -277,11 +284,41 @@ export class LearningLoopService {
         evaluationId,
       );
 
-      const question = await this.loadQuestion(
-        studyPackId,
-        conceptId,
-        nextQuestionType,
-      );
+      /*
+       * Adaptive remediation must NEVER reuse the
+       * learner's just-answered question.
+       *
+       * Instead, generate a fresh question variant.
+       *
+       * INCORRECT answers step down where possible
+       * and use a SCAFFOLD question.
+       *
+       * PARTIAL answers stay at the selected level
+       * but use a meaningfully different ALTERNATE
+       * question.
+       */
+      const purpose =
+        adaptive.correctness === 'INCORRECT' ? 'SCAFFOLD' : 'ALTERNATE';
+
+      const adaptiveQuestion =
+        await this.questionsService.generateAdaptiveQuestion(
+          studyPackId,
+          conceptId,
+          nextQuestionType,
+          purpose,
+          remediation.focusPoints,
+          evaluationPrompt,
+        );
+
+      const question: LearningLoopQuestion = {
+        id: adaptiveQuestion.id,
+
+        type: adaptiveQuestion.type,
+
+        difficulty: adaptiveQuestion.difficulty,
+
+        prompt: adaptiveQuestion.prompt,
+      };
 
       return {
         ...baseResult,

@@ -194,6 +194,43 @@ class QuestionConcept(BaseModel):
         return unique_chunks
 
 
+QuestionPurpose = Literal[
+    "SCAFFOLD",
+    "ALTERNATE",
+    "RETEST",
+]
+
+
+class AdaptiveQuestionContext(BaseModel):
+    purpose: QuestionPurpose
+
+    focus_points: list[str] = Field(
+        default_factory=list,
+        max_length=10,
+    )
+
+    previous_question_prompt: str | None = Field(
+        default=None,
+        max_length=1200,
+    )
+
+    @field_validator("focus_points")
+    @classmethod
+    def clean_focus_points(
+        cls,
+        values: list[str],
+    ) -> list[str]:
+        cleaned = list(
+            dict.fromkeys(
+                value.strip()
+                for value in values
+                if value.strip()
+            )
+        )
+
+        return cleaned
+
+
 class QuestionGenerationRequest(BaseModel):
     concept: QuestionConcept
 
@@ -208,6 +245,8 @@ class QuestionGenerationRequest(BaseModel):
         min_length=1,
         max_length=3,
     )
+
+    adaptive_context: AdaptiveQuestionContext | None = None
 
     @field_validator("requested_types")
     @classmethod

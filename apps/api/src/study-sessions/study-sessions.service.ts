@@ -22,6 +22,11 @@ import {
 } from './review-completion-policy';
 import { scheduleConceptReview } from './review-scheduling-policy';
 import {
+  calculateStudyPackCoverage,
+  planNormalStudySession,
+} from './session-planner';
+
+import {
   INITIAL_SESSION_ALPHA,
   INITIAL_SESSION_ATTEMPT_COUNT,
   INITIAL_SESSION_BETA,
@@ -72,6 +77,8 @@ export type StudySessionCurrentConcept = {
 
   reviewRequired: boolean;
 
+  recoveryTargetQuestionType: 'RECALL' | 'UNDERSTANDING' | 'APPLICATION' | null;
+
   mastery: StudySessionMastery;
 };
 
@@ -90,6 +97,8 @@ export type StudySessionConceptFlowItem = {
 
   reviewRequired: boolean;
 
+  recoveryTargetQuestionType: 'RECALL' | 'UNDERSTANDING' | 'APPLICATION' | null;
+
   mastery: StudySessionMastery;
 };
 
@@ -105,6 +114,13 @@ export type StudySessionStateResult = {
   startedAt: Date;
 
   completedAt: Date | null;
+
+  /**
+   * Human-facing sequence number for NORMAL study sessions.
+   *
+   * REVIEW sessions do not participate in this sequence.
+   */
+  sessionNumber: number | null;
 
   conceptCount: number;
 
@@ -187,8 +203,6 @@ type PreparedSessionConcept = SessionPlanConcept & {
 
 @Injectable()
 export class StudySessionsService {
-  private static readonly NORMAL_SESSION_CONCEPT_LIMIT = 3;
-
   constructor(
     private readonly prisma: PrismaService,
 
@@ -287,67 +301,106 @@ export class StudySessionsService {
     }
 
     /*
-     * Deterministic global priority:
+     * STUDY PACK COVERAGE
      *
-     * 1. higher importance
-     * 2. easier conceptual difficulty
-     * 3. earlier creation
-     * 4. ID tie-breaker
+     * Previous Normal Study attempts influence only WHICH
+     * concepts should be sampled next.
+     *
+     * They do not initialize the new session's visible
+     * mastery. Every selected concept still starts from zero.
      */
-    const orderedConcepts = [...studyConcepts].sort((left, right) => {
-      if (left.importance !== right.importance) {
-        return right.importance - left.importance;
-      }
+    const historicalAttempts = await this.prisma.questionAttempt.findMany({
+      where: {
+        studySession: {
+          studyPackId,
 
-      const difficultyDifference =
-        this.difficultyRank(left.difficulty) -
-        this.difficultyRank(right.difficulty);
+          kind: 'NORMAL',
+        },
 
-      if (difficultyDifference !== 0) {
-        return difficultyDifference;
-      }
+        question: {
+          concept: {
+            studyPackId,
+          },
+        },
+      },
 
-      const createdDifference =
-        left.createdAt.getTime() - right.createdAt.getTime();
-
-      if (createdDifference !== 0) {
-        return createdDifference;
-      }
-
-      return left.id.localeCompare(right.id);
+      select: {
+        question: {
+          select: {
+            conceptId: true,
+          },
+        },
+      },
     });
 
+    const attemptCountByConcept = new Map<string, number>();
+
+    for (const attempt of historicalAttempts) {
+      const conceptId = attempt.question.conceptId;
+
+      attemptCountByConcept.set(
+        conceptId,
+        (attemptCountByConcept.get(conceptId) ?? 0) + 1,
+      );
+    }
+
+    const plan = planNormalStudySession(
+      studyConcepts.map((concept) => ({
+        id: concept.id,
+
+        importance: concept.importance,
+
+        difficulty: concept.difficulty,
+
+        createdAt: concept.createdAt,
+
+        priorAttemptCount: attemptCountByConcept.get(concept.id) ?? 0,
+      })),
+    );
+
+    const conceptById = new Map(
+      studyConcepts.map((concept) => [concept.id, concept]),
+    );
+
+    const plannedConcepts = plan.selectedConcepts.map((plannedConcept) => {
+      const concept = conceptById.get(plannedConcept.id);
+
+      if (!concept) {
+        throw new InternalServerErrorException(
+          `Session planner selected unknown concept ` + `${plannedConcept.id}`,
+        );
+      }
+
+      return concept;
+    });
+
+    if (plannedConcepts.length === 0) {
+      throw new InternalServerErrorException(
+        'Session planner produced an empty concept batch',
+      );
+    }
+
     /*
-     * A normal session owns only a bounded
-     * concept batch.
+     * Keep the approved fresh-session behavior:
      *
-     * This prevents POST /sessions from
-     * triggering question generation for an
-     * entire large Study Pack.
-     */
-    /*
-     * Every fresh NORMAL session receives a fresh starting
-     * concept/question.
+     * the selected CONTENT batch is coverage-aware,
+     * but the first concept is randomized inside that batch.
      *
-     * Randomness happens ONCE on the server when the session is
-     * created. The resulting currentConceptId/currentQuestionId
-     * are persisted, so refreshing the browser does not change
-     * the learner's current question.
+     * Refreshing does not reroll it because the resulting IDs
+     * are persisted on StudySession.
      */
     const firstConceptIndex = Math.floor(
-      Math.random() * orderedConcepts.length,
+      Math.random() * plannedConcepts.length,
     );
 
-    const firstSelectedConcept = orderedConcepts[firstConceptIndex];
-
-    const remainingOrderedConcepts = orderedConcepts.filter(
-      (concept) => concept.id !== firstSelectedConcept.id,
-    );
+    const firstSelectedConcept = plannedConcepts[firstConceptIndex];
 
     const selectedConcepts = [
       firstSelectedConcept,
-      ...remainingOrderedConcepts,
-    ].slice(0, StudySessionsService.NORMAL_SESSION_CONCEPT_LIMIT);
+      ...plannedConcepts.filter(
+        (concept) => concept.id !== firstSelectedConcept.id,
+      ),
+    ];
 
     const preparedConcepts: PreparedSessionConcept[] = [];
 
@@ -540,6 +593,8 @@ export class StudySessionsService {
       where: {
         conceptId,
 
+        purpose: 'BASELINE',
+
         concept: {
           studyPackId,
         },
@@ -577,6 +632,85 @@ export class StudySessionsService {
 
       prompt: question.prompt,
     }));
+  }
+
+  async getStudyPackCoverage(studyPackId: string) {
+    const concepts = await this.prisma.concept.findMany({
+      where: {
+        studyPackId,
+
+        sources: {
+          some: {
+            chunk: {
+              unit: {
+                document: {
+                  status: 'READY',
+                },
+              },
+            },
+          },
+        },
+      },
+
+      select: {
+        id: true,
+
+        importance: true,
+      },
+    });
+
+    const attempts = await this.prisma.questionAttempt.findMany({
+      where: {
+        studySession: {
+          studyPackId,
+
+          kind: 'NORMAL',
+        },
+
+        question: {
+          concept: {
+            studyPackId,
+          },
+        },
+      },
+
+      select: {
+        question: {
+          select: {
+            conceptId: true,
+          },
+        },
+      },
+    });
+
+    const attemptCountByConcept = new Map<string, number>();
+
+    for (const attempt of attempts) {
+      const conceptId = attempt.question.conceptId;
+
+      attemptCountByConcept.set(
+        conceptId,
+        (attemptCountByConcept.get(conceptId) ?? 0) + 1,
+      );
+    }
+
+    const coverage = calculateStudyPackCoverage(
+      concepts.map((concept) => ({
+        id: concept.id,
+
+        importance: concept.importance,
+
+        priorAttemptCount: attemptCountByConcept.get(concept.id) ?? 0,
+      })),
+    );
+
+    return {
+      studyPackId,
+
+      ...coverage,
+
+      percentage: Math.round(coverage.weightedRatio * 100),
+    };
   }
 
   async startReviewSession(
@@ -894,11 +1028,27 @@ export class StudySessionsService {
       },
     );
 
+    /*
+     * If this answer successfully completes a scaffold while
+     * the concept is recovering toward a previously failed
+     * cognitive level, replace normal progression with a NEW
+     * RETEST question at that recovery target.
+     */
+    const effectiveLearningStep = await this.applyRecoveryClimbBackIfNeeded(
+      session.id,
+      session.studyPackId,
+      conceptId,
+      questionId,
+      evaluation.correctness,
+      learningStep,
+    );
+
     await this.applyLearningStep(
       session.id,
       conceptId,
       questionId,
-      learningStep,
+      effectiveLearningStep,
+      evaluation.correctness,
     );
 
     const updatedSession = await this.getSessionState(session.id);
@@ -906,7 +1056,7 @@ export class StudySessionsService {
     return {
       evaluation,
 
-      learningStep,
+      learningStep: effectiveLearningStep,
 
       reviewStep: null,
 
@@ -973,6 +1123,8 @@ export class StudySessionsService {
 
             reviewRequired: true,
 
+            recoveryTargetQuestionType: true,
+
             sessionMasteryScore: true,
 
             sessionEvidenceWeight: true,
@@ -998,6 +1150,45 @@ export class StudySessionsService {
     if (!session) {
       throw new NotFoundException(`StudySession ${sessionId} was not found`);
     }
+
+    /*
+     * NORMAL STUDY SESSION NUMBER
+     *
+     * Session numbering is scoped to the Study Pack and counts
+     * only NORMAL sessions.
+     *
+     * REVIEW sessions are deliberately excluded so a scheduled
+     * review never turns Session 02 into Session 03.
+     *
+     * We count NORMAL sessions that started at or before this
+     * session. The ID tie-breaker keeps the result deterministic
+     * in the extremely unlikely case of identical timestamps.
+     */
+    const sessionNumber =
+      session.kind === 'NORMAL'
+        ? await this.prisma.studySession.count({
+            where: {
+              studyPackId: session.studyPackId,
+
+              kind: 'NORMAL',
+
+              OR: [
+                {
+                  startedAt: {
+                    lt: session.startedAt,
+                  },
+                },
+                {
+                  startedAt: session.startedAt,
+
+                  id: {
+                    lte: session.id,
+                  },
+                },
+              ],
+            },
+          })
+        : null;
 
     const completedConceptCount = session.conceptProgress.filter(
       (progress) => progress.status === 'COMPLETED',
@@ -1034,6 +1225,9 @@ export class StudySessionsService {
             status: currentProgress.status,
 
             reviewRequired: currentProgress.reviewRequired,
+
+            recoveryTargetQuestionType:
+              currentProgress.recoveryTargetQuestionType,
 
             mastery: {
               score: currentProgress.sessionMasteryScore,
@@ -1073,6 +1267,8 @@ export class StudySessionsService {
 
         reviewRequired: progress.reviewRequired,
 
+        recoveryTargetQuestionType: progress.recoveryTargetQuestionType,
+
         mastery: {
           score: progress.sessionMasteryScore,
 
@@ -1090,6 +1286,8 @@ export class StudySessionsService {
       kind: session.kind,
 
       status: session.status,
+
+      sessionNumber,
 
       startedAt: session.startedAt,
 
@@ -1374,11 +1572,143 @@ export class StudySessionsService {
     });
   }
 
+  private async applyRecoveryClimbBackIfNeeded(
+    sessionId: string,
+    studyPackId: string,
+    conceptId: string,
+    answeredQuestionId: string,
+    correctness: 'CORRECT' | 'PARTIAL' | 'INCORRECT',
+    learningStep: LearningLoopNextStepResult,
+  ): Promise<LearningLoopNextStepResult> {
+    /*
+     * Only successful evidence can complete a scaffold and
+     * trigger the climb back toward the original level.
+     */
+    if (correctness !== 'CORRECT') {
+      return learningStep;
+    }
+
+    const progress = await this.prisma.sessionConceptProgress.findUnique({
+      where: {
+        sessionId_conceptId: {
+          sessionId,
+
+          conceptId,
+        },
+      },
+
+      select: {
+        recoveryTargetQuestionType: true,
+
+        recoveryOriginQuestionId: true,
+      },
+    });
+
+    if (!progress?.recoveryTargetQuestionType) {
+      return learningStep;
+    }
+
+    const targetQuestionType = progress.recoveryTargetQuestionType;
+
+    /*
+     * Load the exact question just answered. Its prompt is
+     * supplied to the adaptive generator as an additional
+     * anti-repetition signal.
+     *
+     * QuestionsService also rejects prompts that duplicate
+     * ANY existing question for this concept, so the RETEST
+     * cannot silently recreate the original failed question.
+     */
+    const answeredQuestion = await this.prisma.question.findFirst({
+      where: {
+        id: answeredQuestionId,
+
+        conceptId,
+
+        concept: {
+          studyPackId,
+        },
+      },
+
+      select: {
+        prompt: true,
+      },
+    });
+
+    if (!answeredQuestion) {
+      throw new InternalServerErrorException(
+        `Recovery could not load answered question ` + `${answeredQuestionId}`,
+      );
+    }
+
+    const retest = await this.questionsService.generateAdaptiveQuestion(
+      studyPackId,
+      conceptId,
+      targetQuestionType,
+      'RETEST',
+      [],
+      answeredQuestion.prompt,
+    );
+
+    /*
+     * Recovery has now climbed back to its target.
+     *
+     * Clear the recovery marker BEFORE presenting the retest.
+     *
+     * If the learner fails the RETEST, the normal adaptive
+     * path will create a fresh recovery target again.
+     */
+    await this.prisma.sessionConceptProgress.update({
+      where: {
+        sessionId_conceptId: {
+          sessionId,
+
+          conceptId,
+        },
+      },
+
+      data: {
+        recoveryTargetQuestionType: null,
+
+        recoveryOriginQuestionId: null,
+      },
+    });
+
+    return {
+      ...learningStep,
+
+      action: 'ASK_QUESTION',
+
+      reason:
+        `The learner successfully completed the scaffold. ` +
+        `Return to a new ${targetQuestionType} retest.`,
+
+      nextQuestionType: targetQuestionType,
+
+      retestQuestionType: null,
+
+      question: {
+        id: retest.id,
+
+        type: retest.type,
+
+        difficulty: retest.difficulty,
+
+        prompt: retest.prompt,
+      },
+
+      remediation: null,
+
+      reviewQuestionType: null,
+    };
+  }
+
   private async applyLearningStep(
     sessionId: string,
     currentConceptId: string,
     answeredQuestionId: string,
     learningStep: LearningLoopNextStepResult,
+    correctness: 'CORRECT' | 'PARTIAL' | 'INCORRECT',
   ): Promise<void> {
     if (learningStep.conceptId !== currentConceptId) {
       throw new InternalServerErrorException(
@@ -1418,6 +1748,38 @@ export class StudySessionsService {
           'LearningLoop attempted normal progression ' +
             'without changing the question',
         );
+      }
+
+      /*
+       * A completely incorrect answer enters recovery mode.
+       *
+       * AdaptivePolicy.retestQuestionType represents the
+       * original level we eventually want to verify again.
+       *
+       * PARTIAL answers do not create a new recovery target;
+       * if recovery was already active, the existing target
+       * is intentionally preserved.
+       */
+      if (
+        learningStep.action === 'REMEDIATE_AND_ASK' &&
+        correctness === 'INCORRECT' &&
+        learningStep.retestQuestionType
+      ) {
+        await this.prisma.sessionConceptProgress.update({
+          where: {
+            sessionId_conceptId: {
+              sessionId,
+
+              conceptId: currentConceptId,
+            },
+          },
+
+          data: {
+            recoveryTargetQuestionType: learningStep.retestQuestionType,
+
+            recoveryOriginQuestionId: answeredQuestionId,
+          },
+        });
       }
 
       await this.prisma.studySession.update({
@@ -1491,6 +1853,10 @@ export class StudySessionsService {
           status: reviewRequired ? 'REVIEW_REQUIRED' : 'COMPLETED',
 
           reviewRequired,
+
+          recoveryTargetQuestionType: null,
+
+          recoveryOriginQuestionId: null,
 
           completedAt: now,
         },
@@ -1605,6 +1971,8 @@ export class StudySessionsService {
           conceptId: nextProgress.conceptId,
 
           type: 'RECALL',
+
+          purpose: 'BASELINE',
 
           sources: {
             some: {

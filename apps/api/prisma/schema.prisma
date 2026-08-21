@@ -187,6 +187,18 @@ model Question {
 
   difficulty QuestionDifficulty @default(MEDIUM)
 
+  // Question Model v2
+  //
+  // variant = 0 is the stable baseline question produced
+  // during normal concept preparation.
+  //
+  // Additional variants allow the adaptive tutor to create
+  // genuinely different scaffold, alternate, and retest
+  // questions without overwriting historical Question rows.
+  variant Int @default(0)
+
+  purpose QuestionPurpose @default(BASELINE)
+
   prompt String @db.Text
 
   expectedAnswer String @db.Text
@@ -199,9 +211,14 @@ model Question {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([conceptId, type])
+  // Multiple questions of the same cognitive type may now
+  // exist for a concept. Their stable identity is:
+  //
+  // concept + type + variant
+  @@unique([conceptId, type, variant])
   @@index([conceptId])
   @@index([type])
+  @@index([purpose])
   @@index([difficulty])
 }
 
@@ -497,6 +514,16 @@ model SessionConceptProgress {
 
   sessionAttemptCount Int @default(0)
 
+  // Adaptive recovery state.
+  //
+  // When a learner fails a question, StudyLoop may step
+  // down to an easier scaffold. These fields remember the
+  // cognitive level the learner must eventually climb back
+  // to and the question that originally triggered recovery.
+  recoveryTargetQuestionType QuestionType?
+
+  recoveryOriginQuestionId String?
+
   masteryEvents SessionMasteryEvent[]
 
   startedAt   DateTime?
@@ -535,6 +562,21 @@ enum QuestionType {
   RECALL
   UNDERSTANDING
   APPLICATION
+}
+
+enum QuestionPurpose {
+  // Initial question generated for the normal cognitive ladder.
+  BASELINE
+
+  // Easier question generated to rebuild a missing prerequisite
+  // or foundational piece of understanding.
+  SCAFFOLD
+
+  // Different formulation at approximately the same level.
+  ALTERNATE
+
+  // New question used after remediation to verify recovery.
+  RETEST
 }
 
 enum QuestionDifficulty {

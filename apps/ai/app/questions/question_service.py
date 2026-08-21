@@ -58,7 +58,7 @@ class QuestionService:
 
     SOURCE_TEXT_LIMIT = 1800
 
-    SEMANTIC_ATTEMPTS = 2
+    SEMANTIC_ATTEMPTS = 3
 
     EXPECTED_DIFFICULTY = {
         "RECALL": "EASY",
@@ -699,6 +699,18 @@ in the input.
                 source_payload,
         }
 
+        if request.adaptive_context:
+            payload["adaptive_context"] = {
+                "purpose":
+                    request.adaptive_context.purpose,
+
+                "focus_points":
+                    request.adaptive_context.focus_points,
+
+                "previous_question_prompt":
+                    request.adaptive_context.previous_question_prompt,
+            }
+
         prompt = (
             "Generate grounded study questions for "
             "the supplied TARGET_CONCEPT.\n\n"
@@ -722,17 +734,114 @@ in the input.
             )
         )
 
+        if request.adaptive_context:
+            adaptive = request.adaptive_context
+
+            prompt += (
+                "\n\n============================================================"
+                "\nADAPTIVE QUESTION MODE"
+                "\n============================================================"
+                "\nThis is NOT a baseline question-generation request."
+                "\n"
+                "\nPurpose: "
+                + adaptive.purpose
+                + "\n"
+                "\nThe generated question MUST be genuinely different "
+                "from the learner's previous question."
+            )
+
+            if adaptive.previous_question_prompt:
+                prompt += (
+                    "\n\nPREVIOUS QUESTION — DO NOT REPEAT OR SIMPLY "
+                    "PARAPHRASE:"
+                    "\n"
+                    + adaptive.previous_question_prompt
+                )
+
+            if adaptive.focus_points:
+                prompt += (
+                    "\n\nLEARNING GAPS TO TARGET:"
+                    "\n- "
+                    + "\n- ".join(
+                        adaptive.focus_points
+                    )
+                )
+
+            if adaptive.purpose == "SCAFFOLD":
+                prompt += (
+                    "\n\nSCAFFOLD RULES:"
+                    "\n- Ask a simpler question that helps rebuild the "
+                    "knowledge needed for the failed question."
+                    "\n- Focus directly on the supplied learning gaps when "
+                    "possible."
+                    "\n- Do not give away the previous answer."
+                    "\n- The learner should be able to answer this before "
+                    "returning to the harder level."
+                )
+
+            elif adaptive.purpose == "ALTERNATE":
+                prompt += (
+                    "\n\nALTERNATE RULES:"
+                    "\n- Stay at approximately the same cognitive level."
+                    "\n- Test the concept from a meaningfully different "
+                    "angle."
+                    "\n- Do not merely reword the previous question."
+                )
+
+            elif adaptive.purpose == "RETEST":
+                prompt += (
+                    "\n\nRETEST RULES:"
+                    "\n- Verify whether the learner can now demonstrate the "
+                    "target skill after remediation."
+                    "\n- Use a NEW question."
+                    "\n- Do not reuse the wording, structure, or exact "
+                    "scenario from the previous question."
+                )
+
         if previous_error:
             prompt += (
-                "\n\nYour previous result failed "
-                "StudyLoop question validation.\n\n"
-                "Failure reason:\n"
+                "\n\n============================================================"
+                "\nREPAIR ATTEMPT"
+                "\n============================================================"
+                "\nYour previous result failed StudyLoop semantic validation."
+                "\n\nVALIDATOR FEEDBACK:\n"
                 + previous_error
-                + "\n\nRegenerate the COMPLETE set "
-                "of requested questions. Correct the "
-                "reported problem while preserving "
-                "source grounding and target-concept "
-                "focus."
+                + "\n\nRegenerate the COMPLETE set of requested questions."
+                "\n\nYou MUST directly repair the reported failure."
+                "\n\nFor every question, especially any question type named "
+                "in the validator feedback:"
+                "\n"
+                "\n1. Make the TARGET_CONCEPT itself the main knowledge "
+                "required to answer."
+                "\n"
+                "\n2. Do NOT make a neighboring architecture, model, "
+                "technique, limitation, metric, workflow, or tool the real "
+                "answer."
+                "\n"
+                "\n3. Before returning the question, apply this "
+                "counterfactual test internally:"
+                "\n"
+                '\"If I removed the TARGET_CONCEPT from this question, '
+                'could essentially the same answer still be given?\"'
+                "\n"
+                "\nIf YES, rewrite the question again because it is still "
+                "off-target."
+                "\n"
+                "\n4. Prefer a simpler, directly grounded question over a "
+                "clever but weakly aligned question."
+                "\n"
+                "\n5. For RECALL, ask for a core fact, role, mechanism, "
+                "property, definition, or component belonging directly to "
+                "the TARGET_CONCEPT."
+                "\n"
+                "\n6. For UNDERSTANDING, ask WHY or HOW the TARGET_CONCEPT "
+                "works, matters, or behaves."
+                "\n"
+                "\n7. For APPLICATION, require the learner to APPLY the "
+                "TARGET_CONCEPT itself in a supported scenario."
+                "\n"
+                "\nDo not mention the validator or this repair process in "
+                "the generated questions."
             )
 
         return prompt

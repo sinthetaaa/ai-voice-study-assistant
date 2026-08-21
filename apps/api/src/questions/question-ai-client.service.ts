@@ -24,6 +24,18 @@ export type QuestionGenerationConcept = {
   sourceChunks: QuestionSourceChunk[];
 };
 
+export type AdaptiveQuestionPurpose = 'SCAFFOLD' | 'ALTERNATE' | 'RETEST';
+
+export type AdaptiveQuestionGenerationContext = {
+  questionType: 'RECALL' | 'UNDERSTANDING' | 'APPLICATION';
+
+  purpose: AdaptiveQuestionPurpose;
+
+  focusPoints: string[];
+
+  previousQuestionPrompt: string | null;
+};
+
 export type GeneratedQuestion = {
   type: QuestionType;
   difficulty: QuestionDifficulty;
@@ -140,6 +152,136 @@ export class QuestionAiClientService implements OnModuleDestroy {
     const payload = (await response.json()) as QuestionApiResponse;
 
     return this.validateResponse(concept, uniqueRequestedTypes, payload);
+  }
+
+  async generateAdaptiveQuestion(
+    concept: QuestionGenerationConcept,
+    context: AdaptiveQuestionGenerationContext,
+  ): Promise<GeneratedQuestion> {
+    const aiServiceUrl = this.configService
+      .getOrThrow<string>('AI_SERVICE_URL')
+      .replace(/\/$/, '');
+
+    const response = await fetch(`${aiServiceUrl}/questions/generate`, {
+      method: 'POST',
+
+      dispatcher: this.aiDispatcher,
+
+      headers: {
+        'Content-Type': 'application/json',
+      },
+
+      body: JSON.stringify({
+        concept: {
+          id: concept.id,
+          name: concept.name,
+          description: concept.description,
+          importance: concept.importance,
+          difficulty: concept.difficulty,
+
+          source_chunks: concept.sourceChunks.map((chunk) => ({
+            id: chunk.id,
+            text: chunk.text,
+            document_name: chunk.documentName,
+            unit_label: chunk.unitLabel,
+          })),
+        },
+
+        requested_types: [context.questionType],
+
+        adaptive_context: {
+          purpose: context.purpose,
+          focus_points: context.focusPoints,
+          previous_question_prompt: context.previousQuestionPrompt,
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      const responseBody = await response.text();
+
+      throw new Error(
+        `Adaptive question generation service returned ` +
+          `${response.status}: ${responseBody}`,
+      );
+    }
+
+    const payload = (await response.json()) as {
+      concept_id: string;
+
+      questions: {
+        type: 'RECALL' | 'UNDERSTANDING' | 'APPLICATION';
+
+        difficulty: 'EASY' | 'MEDIUM' | 'HARD';
+
+        prompt: string;
+
+        expected_answer: string;
+
+        evidence_chunk_ids: string[];
+      }[];
+    };
+
+    if (
+      payload.concept_id !== concept.id ||
+      !Array.isArray(payload.questions) ||
+      payload.questions.length !== 1
+    ) {
+      throw new Error(
+        'Adaptive question generation returned an invalid payload',
+      );
+    }
+
+    const raw = payload.questions[0];
+
+    if (raw.type !== context.questionType) {
+      throw new Error(
+        `Adaptive question generation returned ${raw.type} ` +
+          `instead of ${context.questionType}`,
+      );
+    }
+
+    const allowedChunkIds = new Set(
+      concept.sourceChunks.map((chunk) => chunk.id),
+    );
+
+    const evidenceChunkIds = Array.from(
+      new Set(
+        raw.evidence_chunk_ids.filter((chunkId) =>
+          allowedChunkIds.has(chunkId),
+        ),
+      ),
+    ).slice(0, 3);
+
+    if (evidenceChunkIds.length === 0) {
+      throw new Error('Adaptive question has no valid evidence chunks');
+    }
+
+    const prompt = raw.prompt.trim();
+
+    if (!prompt) {
+      throw new Error('Adaptive question prompt is empty');
+    }
+
+    if (
+      context.previousQuestionPrompt &&
+      normalizeQuestionText(prompt) ===
+        normalizeQuestionText(context.previousQuestionPrompt)
+    ) {
+      throw new Error('Adaptive question repeated the previous question');
+    }
+
+    return {
+      type: raw.type,
+
+      difficulty: raw.difficulty,
+
+      prompt,
+
+      expectedAnswer: raw.expected_answer.trim(),
+
+      evidenceChunkIds,
+    };
   }
 
   private validateRequestedTypes(requestedTypes: QuestionType[]): void {
@@ -286,4 +428,12 @@ export class QuestionAiClientService implements OnModuleDestroy {
 
     return result;
   }
+}
+
+function normalizeQuestionText(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, '')
+    .replace(/\s+/g, ' ');
 }

@@ -7,6 +7,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 
 import {
+  AdaptiveQuestionPurpose,
   GeneratedQuestion,
   QuestionAiClientService,
   QuestionGenerationConcept,
@@ -49,6 +50,143 @@ export class QuestionsService {
 
     private readonly questionAiClient: QuestionAiClientService,
   ) {}
+
+  async generateAdaptiveQuestion(
+    studyPackId: string,
+    conceptId: string,
+    questionType: 'RECALL' | 'UNDERSTANDING' | 'APPLICATION',
+    purpose: AdaptiveQuestionPurpose,
+    focusPoints: string[],
+    previousQuestionPrompt: string | null,
+  ): Promise<{
+    id: string;
+    type: 'RECALL' | 'UNDERSTANDING' | 'APPLICATION';
+    difficulty: 'EASY' | 'MEDIUM' | 'HARD';
+    prompt: string;
+    variant: number;
+    purpose: AdaptiveQuestionPurpose;
+  }> {
+    const concept = await this.loadConcept(studyPackId, conceptId);
+
+    if (concept.sourceChunks.length === 0) {
+      throw new BadRequestException(
+        `Concept ${conceptId} has no READY supporting chunks`,
+      );
+    }
+
+    const aiConcept: QuestionGenerationConcept = {
+      id: concept.id,
+      name: concept.name,
+      description: concept.description,
+      importance: concept.importance,
+      difficulty: concept.difficulty,
+      sourceChunks: concept.sourceChunks,
+    };
+
+    const question = await this.questionAiClient.generateAdaptiveQuestion(
+      aiConcept,
+      {
+        questionType,
+        purpose,
+        focusPoints,
+        previousQuestionPrompt,
+      },
+    );
+
+    const allowedChunkIds = new Set(
+      concept.sourceChunks.map((chunk) => chunk.id),
+    );
+
+    for (const chunkId of question.evidenceChunkIds) {
+      if (!allowedChunkIds.has(chunkId)) {
+        throw new BadRequestException(
+          'Adaptive question contains evidence outside concept provenance',
+        );
+      }
+    }
+
+    return this.prisma.$transaction(async (transaction) => {
+      /*
+       * Serialize variant allocation by locking the
+       * concept's question rows for this type.
+       *
+       * The unique database constraint remains the
+       * final protection against collisions.
+       */
+      const existing = await transaction.question.findMany({
+        where: {
+          conceptId,
+          type: questionType,
+        },
+
+        select: {
+          variant: true,
+          prompt: true,
+        },
+
+        orderBy: {
+          variant: 'desc',
+        },
+      });
+
+      const normalizedPrompt = normalizeQuestionPrompt(question.prompt);
+
+      if (
+        existing.some(
+          (item) => normalizeQuestionPrompt(item.prompt) === normalizedPrompt,
+        )
+      ) {
+        throw new BadRequestException(
+          'Adaptive generation produced a question already used for this concept',
+        );
+      }
+
+      const nextVariant = (existing[0]?.variant ?? -1) + 1;
+
+      const created = await transaction.question.create({
+        data: {
+          conceptId,
+
+          type: question.type,
+
+          difficulty: question.difficulty,
+
+          variant: nextVariant,
+
+          purpose,
+
+          prompt: question.prompt,
+
+          expectedAnswer: question.expectedAnswer,
+
+          sources: {
+            create: question.evidenceChunkIds.map((chunkId) => ({
+              chunkId,
+              relevance: 1.0,
+            })),
+          },
+        },
+
+        select: {
+          id: true,
+          type: true,
+          difficulty: true,
+          prompt: true,
+          variant: true,
+          purpose: true,
+        },
+      });
+
+      return {
+        id: created.id,
+        type: created.type,
+        difficulty: created.difficulty,
+        prompt: created.prompt,
+        variant: created.variant,
+        purpose: created.purpose as AdaptiveQuestionPurpose,
+      };
+    });
+  }
 
   async previewConceptQuestions(
     studyPackId: string,
@@ -230,25 +368,31 @@ export class QuestionsService {
          * learner attempts must retain a stable
          * question identity.
          *
-         * The composite unique key:
+         * Question Model v2 keeps the original generated
+         * question as variant 0 / BASELINE.
          *
-         * (conceptId, type)
+         * Additional adaptive variants may later coexist
+         * without overwriting this stable baseline row.
          *
-         * gives each concept exactly one stable
-         * RECALL, UNDERSTANDING and APPLICATION
-         * question slot.
+         * Stable baseline identity:
+         *
+         * (conceptId, type, variant = 0)
          */
         const persistedQuestion = await transaction.question.upsert({
           where: {
-            conceptId_type: {
+            conceptId_type_variant: {
               conceptId: concept.id,
 
               type: question.type,
+
+              variant: 0,
             },
           },
 
           update: {
             difficulty: question.difficulty,
+
+            purpose: 'BASELINE',
 
             prompt: question.prompt,
 
@@ -261,6 +405,10 @@ export class QuestionsService {
             type: question.type,
 
             difficulty: question.difficulty,
+
+            variant: 0,
+
+            purpose: 'BASELINE',
 
             prompt: question.prompt,
 
@@ -440,4 +588,12 @@ export class QuestionsService {
       sourceChunks,
     };
   }
+}
+
+function normalizeQuestionPrompt(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, '')
+    .replace(/\s+/g, ' ');
 }

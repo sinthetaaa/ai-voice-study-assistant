@@ -50,6 +50,14 @@ export class StudySessionsController {
     return this.studySessionsService.startSession(studyPackId);
   }
 
+  @Get('study-packs/:studyPackId/coverage')
+  async getStudyPackCoverage(
+    @Param('studyPackId')
+    studyPackId: string,
+  ) {
+    return this.studySessionsService.getStudyPackCoverage(studyPackId);
+  }
+
   @Post('study-packs/:studyPackId/review-sessions')
   async startReviewSession(
     @Param('studyPackId')
