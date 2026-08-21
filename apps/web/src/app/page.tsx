@@ -163,7 +163,7 @@ export default function Home() {
 
       setUploadPhase("PROCESSING");
 
-      setUploadMessage("StudyLoop is reading and preparing your material…");
+      setUploadMessage("Reading your material…");
 
       await pollUntilReady(activeStudyPackId);
     } catch (error) {
@@ -173,10 +173,6 @@ export default function Home() {
 
   async function pollUntilReady(activeStudyPackId: string) {
     stopReadinessPoll();
-
-    const startedAt = Date.now();
-
-    const timeoutMs = 5 * 60 * 1000;
 
     async function check() {
       try {
@@ -191,12 +187,17 @@ export default function Home() {
         setReadiness(snapshot);
 
         /*
-         * startSession() now performs lazy
-         * question preparation itself.
+         * The upload pipeline has two distinct stages:
          *
-         * Therefore the web app only needs to
-         * wait until ingestion has produced at
-         * least one READY-backed active concept.
+         * 1. Document ingestion:
+         *    parse + chunk + embed
+         *
+         * 2. Study preparation:
+         *    concept extraction + persistence
+         *
+         * A Document with status READY means stage 1
+         * finished. It does NOT yet mean the Study Pack
+         * is ready for learning.
          */
         if (snapshot.counts.activeConceptCount > 0) {
           setUploadPhase("READY");
@@ -208,7 +209,9 @@ export default function Home() {
           return;
         }
 
-        const failedDocuments = (pack.documents ?? []).filter(
+        const currentDocuments = pack.documents ?? [];
+
+        const failedDocuments = currentDocuments.filter(
           (document) =>
             document.status === "FAILED" || document.status === "ERROR",
         );
@@ -223,16 +226,22 @@ export default function Home() {
           return;
         }
 
-        if (Date.now() - startedAt > timeoutMs) {
-          setUploadPhase("ERROR");
+        const allDocumentsReady =
+          currentDocuments.length > 0 &&
+          currentDocuments.every((document) => document.status === "READY");
 
-          setErrorMessage(
-            "Document processing is taking longer than expected. Your files are still saved; try again shortly.",
-          );
+        const anyDocumentProcessing = currentDocuments.some(
+          (document) => document.status === "PROCESSING" || !document.status,
+        );
 
-          stopReadinessPoll();
+        setUploadPhase("PROCESSING");
 
-          return;
+        if (allDocumentsReady) {
+          setUploadMessage("Understanding key concepts…");
+        } else if (anyDocumentProcessing) {
+          setUploadMessage("Reading your material…");
+        } else {
+          setUploadMessage("Preparing your study material…");
         }
 
         readinessPollId.current = window.setTimeout(check, 1500);
