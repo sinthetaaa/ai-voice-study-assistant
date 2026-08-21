@@ -58,6 +58,17 @@ export default function VoiceOrb({
   const mountedRef = useRef(true);
 
   useEffect(() => {
+    /*
+     * React Strict Mode performs an extra
+     * setup -> cleanup -> setup cycle in
+     * development.
+     *
+     * Reset this flag during every effect setup
+     * so the VoiceOrb remains interactive after
+     * that development-only cleanup.
+     */
+    mountedRef.current = true;
+
     return () => {
       mountedRef.current = false;
 
