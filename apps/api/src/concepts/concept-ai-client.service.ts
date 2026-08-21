@@ -59,6 +59,8 @@ export class ConceptAiClientService implements OnModuleDestroy {
       `Requesting concept extraction for ${chunks.length} chunks`,
     );
 
+    const conceptAiStartedAt = Date.now();
+
     let response: Awaited<ReturnType<typeof fetch>>;
 
     try {
@@ -86,6 +88,12 @@ export class ConceptAiClientService implements OnModuleDestroy {
       throw new Error(`Failed to call concept extraction service: ${message}`);
     }
 
+    const conceptAiElapsedMs = Date.now() - conceptAiStartedAt;
+
+    this.logger.log(
+      `[StudyLoopTiming] concept AI response: ${(conceptAiElapsedMs / 1000).toFixed(2)}s for ${chunks.length} chunks`,
+    );
+
     if (!response.ok) {
       const responseBody = await response.text();
 
@@ -94,7 +102,13 @@ export class ConceptAiClientService implements OnModuleDestroy {
       );
     }
 
+    const parseStartedAt = Date.now();
+
     const payload = (await response.json()) as ConceptApiResponse;
+
+    this.logger.log(
+      `[StudyLoopTiming] concept response JSON parse: ${((Date.now() - parseStartedAt) / 1000).toFixed(3)}s`,
+    );
 
     if (!Array.isArray(payload.concepts)) {
       throw new Error(
@@ -143,6 +157,10 @@ export class ConceptAiClientService implements OnModuleDestroy {
 
     this.logger.log(
       `Extracted ${concepts.length} concepts from ${chunks.length} chunks`,
+    );
+
+    this.logger.log(
+      `[StudyLoopTiming] concept client total: ${((Date.now() - conceptAiStartedAt) / 1000).toFixed(2)}s`,
     );
 
     return concepts;
