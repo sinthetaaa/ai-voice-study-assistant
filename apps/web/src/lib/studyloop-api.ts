@@ -112,6 +112,50 @@ export type SessionQuestion = {
   prompt: string;
 };
 
+export type ConceptGraph = {
+  studyPackId: string;
+
+  nodes: {
+    id: string;
+
+    name: string;
+
+    difficulty: "FOUNDATIONAL" | "INTERMEDIATE" | "ADVANCED";
+
+    importance: number;
+  }[];
+
+  edges: {
+    id: string;
+
+    sourceConceptId: string;
+
+    targetConceptId: string;
+
+    type: string;
+
+    strength: number;
+
+    reason: string | null;
+  }[];
+};
+
+export type StudyPackCoverage = {
+  studyPackId: string;
+
+  totalConceptCount: number;
+
+  testedConceptCount: number;
+
+  untestedConceptCount: number;
+
+  conceptRatio: number;
+
+  weightedRatio: number;
+
+  percentage: number;
+};
+
 export type StudySession = {
   sessionId: string;
 
@@ -124,6 +168,8 @@ export type StudySession = {
   startedAt: string;
 
   completedAt: string | null;
+
+  sessionNumber: number | null;
 
   conceptCount: number;
 
@@ -431,6 +477,18 @@ export const studyLoopApi = {
       {
         method: "POST",
       },
+    );
+  },
+
+  getConceptGraph(studyPackId: string) {
+    return request<ConceptGraph>(
+      `/study-packs/${encodeURIComponent(studyPackId)}/concepts/graph`,
+    );
+  },
+
+  getStudyPackCoverage(studyPackId: string) {
+    return request<StudyPackCoverage>(
+      `/study-packs/${encodeURIComponent(studyPackId)}/coverage`,
     );
   },
 

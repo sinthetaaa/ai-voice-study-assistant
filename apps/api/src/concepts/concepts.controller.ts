@@ -1,4 +1,4 @@
-import { Controller, Param, Post, Query } from '@nestjs/common';
+import { Controller, Get, Param, Post, Query } from '@nestjs/common';
 
 import {
   ConceptGenerationResult,
@@ -9,6 +9,14 @@ import {
 @Controller('study-packs/:studyPackId/concepts')
 export class ConceptsController {
   constructor(private readonly conceptsService: ConceptsService) {}
+
+  @Get('graph')
+  async getConceptGraph(
+    @Param('studyPackId')
+    studyPackId: string,
+  ) {
+    return this.conceptsService.getStudyPackConceptGraph(studyPackId);
+  }
 
   @Post('preview')
   async previewConcepts(

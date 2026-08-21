@@ -52,6 +52,99 @@ export class ConceptsService {
     private readonly conceptAiClient: ConceptAiClientService,
   ) {}
 
+  async getStudyPackConceptGraph(studyPackId: string) {
+    const studyPack = await this.prisma.studyPack.findUnique({
+      where: {
+        id: studyPackId,
+      },
+
+      select: {
+        id: true,
+      },
+    });
+
+    if (!studyPack) {
+      throw new NotFoundException(`Study Pack ${studyPackId} was not found`);
+    }
+
+    const concepts = await this.prisma.concept.findMany({
+      where: {
+        studyPackId,
+
+        sources: {
+          some: {
+            chunk: {
+              unit: {
+                document: {
+                  status: 'READY',
+                },
+              },
+            },
+          },
+        },
+      },
+
+      select: {
+        id: true,
+
+        name: true,
+
+        difficulty: true,
+
+        importance: true,
+      },
+
+      orderBy: [
+        {
+          importance: 'desc',
+        },
+        {
+          createdAt: 'asc',
+        },
+      ],
+    });
+
+    const conceptIds = new Set(concepts.map((concept) => concept.id));
+
+    const relationships = await this.prisma.conceptRelationship.findMany({
+      where: {
+        sourceConcept: {
+          studyPackId,
+        },
+
+        targetConcept: {
+          studyPackId,
+        },
+      },
+
+      select: {
+        id: true,
+
+        sourceConceptId: true,
+
+        targetConceptId: true,
+
+        type: true,
+
+        strength: true,
+
+        reason: true,
+      },
+    });
+
+    return {
+      studyPackId,
+
+      nodes: concepts,
+
+      edges: relationships.filter(
+        (relationship) =>
+          conceptIds.has(relationship.sourceConceptId) &&
+          conceptIds.has(relationship.targetConceptId),
+      ),
+    };
+  }
+
   async previewStudyPackConcepts(
     studyPackId: string,
     documentId?: string,

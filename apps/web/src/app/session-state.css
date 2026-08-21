@@ -24,24 +24,21 @@
 
   color: #ffffff;
 
-  border:
-    1px solid
-    rgba(255,255,255,0.48);
+  border: 1px solid rgba(255, 255, 255, 0.48);
 
-  background:
-    radial-gradient(
-      circle at 34% 25%,
-      rgba(255,255,255,0.24),
-      rgba(255,255,255,0.075) 28%,
-      rgba(255,255,255,0.014) 66%,
-      rgba(0,0,0,0.82)
-    );
+  background: radial-gradient(
+    circle at 34% 25%,
+    rgba(255, 255, 255, 0.24),
+    rgba(255, 255, 255, 0.075) 28%,
+    rgba(255, 255, 255, 0.014) 66%,
+    rgba(0, 0, 0, 0.82)
+  );
 
   box-shadow:
-    inset 0 1px 1px rgba(255,255,255,0.3),
-    inset 0 -15px 38px rgba(0,0,0,0.7),
-    0 0 28px rgba(255,255,255,0.12),
-    0 0 80px rgba(255,255,255,0.035);
+    inset 0 1px 1px rgba(255, 255, 255, 0.3),
+    inset 0 -15px 38px rgba(0, 0, 0, 0.7),
+    0 0 28px rgba(255, 255, 255, 0.12),
+    0 0 80px rgba(255, 255, 255, 0.035);
 
   transition:
     transform 220ms ease,
@@ -63,17 +60,13 @@
 .voice-orb::before {
   inset: -13px;
 
-  border:
-    1px solid
-    rgba(255,255,255,0.09);
+  border: 1px solid rgba(255, 255, 255, 0.09);
 }
 
 .voice-orb::after {
   inset: -30px;
 
-  border:
-    1px solid
-    rgba(255,255,255,0.035);
+  border: 1px solid rgba(255, 255, 255, 0.035);
 }
 
 .voice-orb-inner {
@@ -83,12 +76,11 @@
 
   border-radius: 50%;
 
-  background:
-    radial-gradient(
-      circle,
-      rgba(255,255,255,0.11),
-      transparent 68%
-    );
+  background: radial-gradient(
+    circle,
+    rgba(255, 255, 255, 0.11),
+    transparent 68%
+  );
 
   filter: blur(7px);
 
@@ -98,14 +90,13 @@
 .voice-orb:hover {
   transform: scale(1.045);
 
-  border-color:
-    rgba(255,255,255,0.72);
+  border-color: rgba(255, 255, 255, 0.72);
 
   box-shadow:
-    inset 0 1px 1px rgba(255,255,255,0.34),
-    inset 0 -15px 38px rgba(0,0,0,0.7),
-    0 0 38px rgba(255,255,255,0.17),
-    0 0 95px rgba(255,255,255,0.05);
+    inset 0 1px 1px rgba(255, 255, 255, 0.34),
+    inset 0 -15px 38px rgba(0, 0, 0, 0.7),
+    0 0 38px rgba(255, 255, 255, 0.17),
+    0 0 95px rgba(255, 255, 255, 0.05);
 }
 
 /*
@@ -133,11 +124,7 @@
 
   opacity: 0.94;
 
-  filter:
-    drop-shadow(
-      0 0 8px
-      rgba(255,255,255,0.24)
-    );
+  filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.24));
 }
 
 /*
@@ -157,11 +144,7 @@
 
   overflow: visible;
 
-  filter:
-    drop-shadow(
-      0 0 7px
-      rgba(255,255,255,0.34)
-    );
+  filter: drop-shadow(0 0 7px rgba(255, 255, 255, 0.34));
 }
 
 /*
@@ -171,16 +154,12 @@
 
 .voice-orb.recording {
   box-shadow:
-    inset 0 1px 1px rgba(255,255,255,0.38),
-    inset 0 -15px 38px rgba(0,0,0,0.7),
-    0 0 40px rgba(255,255,255,0.18),
-    0 0 105px rgba(255,255,255,0.06);
+    inset 0 1px 1px rgba(255, 255, 255, 0.38),
+    inset 0 -15px 38px rgba(0, 0, 0, 0.7),
+    0 0 40px rgba(255, 255, 255, 0.18),
+    0 0 105px rgba(255, 255, 255, 0.06);
 
-  animation:
-    orbBreathing
-    2.25s
-    ease-in-out
-    infinite;
+  animation: orbBreathing 2.25s ease-in-out infinite;
 }
 
 /*
@@ -190,33 +169,23 @@
 
 .voice-orb.recording.speaking {
   box-shadow:
-    inset 0 1px 1px rgba(255,255,255,0.42),
-    inset 0 -15px 38px rgba(0,0,0,0.68),
-    0 0 48px rgba(255,255,255,0.24),
-    0 0 120px rgba(255,255,255,0.075);
+    inset 0 1px 1px rgba(255, 255, 255, 0.42),
+    inset 0 -15px 38px rgba(0, 0, 0, 0.68),
+    0 0 48px rgba(255, 255, 255, 0.24),
+    0 0 120px rgba(255, 255, 255, 0.075);
 }
 
 .voice-orb.recording::before {
-  animation:
-    orbOuterPulse
-    1.8s
-    ease-out
-    infinite;
+  animation: orbOuterPulse 1.8s ease-out infinite;
 }
 
 .voice-orb.recording::after {
-  animation:
-    orbOuterPulse
-    1.8s
-    ease-out
-    0.45s
-    infinite;
+  animation: orbOuterPulse 1.8s ease-out 0.45s infinite;
 }
 
 @keyframes orbBreathing {
   50% {
-    transform:
-      scale(1.035);
+    transform: scale(1.035);
   }
 }
 
@@ -224,15 +193,13 @@
   from {
     opacity: 0.5;
 
-    transform:
-      scale(0.9);
+    transform: scale(0.9);
   }
 
   to {
     opacity: 0;
 
-    transform:
-      scale(1.23);
+    transform: scale(1.23);
   }
 }
 
@@ -246,10 +213,7 @@
   width: 158px;
   height: 158px;
 
-  margin:
-    30px
-    auto
-    0;
+  margin: 30px auto 0;
 
   padding: 7px;
 
@@ -259,21 +223,9 @@
 
   border-radius: 50%;
 
-  filter:
-    drop-shadow(
-      0 0 18px
-      rgba(255,255,255,0.08)
-    );
+  filter: drop-shadow(0 0 18px rgba(255, 255, 255, 0.08));
 
-  transition:
-    background
-    650ms
-    cubic-bezier(
-      0.16,
-      1,
-      0.3,
-      1
-    );
+  transition: background 650ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .mastery-ring::after {
@@ -285,16 +237,13 @@
 
   border-radius: 50%;
 
-  background:
-    radial-gradient(
-      circle at 38% 27%,
-      rgba(255,255,255,0.055),
-      #070707 68%
-    );
+  background: radial-gradient(
+    circle at 38% 27%,
+    rgba(255, 255, 255, 0.055),
+    #070707 68%
+  );
 
-  box-shadow:
-    inset 0 1px
-    rgba(255,255,255,0.075);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.075);
 }
 
 .mastery-ring-inner {
@@ -339,38 +288,23 @@
 .flow-item.active {
   color: #f1f1ee;
 
-  transform:
-    translateX(2px);
+  transform: translateX(2px);
 }
 
 .flow-item.active .flow-node {
-  background:
-    linear-gradient(
-      180deg,
-      #ffffff,
-      #d9d9d6
-    );
+  background: linear-gradient(180deg, #ffffff, #d9d9d6);
 
-  border-color:
-    rgba(255,255,255,0.95);
+  border-color: rgba(255, 255, 255, 0.95);
 
   box-shadow:
-    0 0 17px
-      rgba(255,255,255,0.28),
-    0 0 44px
-      rgba(255,255,255,0.1);
+    0 0 17px rgba(255, 255, 255, 0.28),
+    0 0 44px rgba(255, 255, 255, 0.1);
 
-  animation:
-    activeFlowGlow
-    2.5s
-    ease-in-out
-    infinite alternate;
+  animation: activeFlowGlow 2.5s ease-in-out infinite alternate;
 }
 
 .flow-item.active .flow-label {
-  text-shadow:
-    0 0 15px
-    rgba(255,255,255,0.14);
+  text-shadow: 0 0 15px rgba(255, 255, 255, 0.14);
 }
 
 .flow-item.waiting {
@@ -380,10 +314,8 @@
 @keyframes activeFlowGlow {
   to {
     box-shadow:
-      0 0 24px
-        rgba(255,255,255,0.36),
-      0 0 58px
-        rgba(255,255,255,0.12);
+      0 0 24px rgba(255, 255, 255, 0.36),
+      0 0 58px rgba(255, 255, 255, 0.12);
   }
 }
 
@@ -405,28 +337,18 @@
 
   border-radius: 50%;
 
-  border:
-    1px solid
-    rgba(255,255,255,0.12);
+  border: 1px solid rgba(255, 255, 255, 0.12);
 
-  border-top-color:
-    rgba(255,255,255,0.9);
+  border-top-color: rgba(255, 255, 255, 0.9);
 
-  animation:
-    sessionSpin
-    900ms
-    linear
-    infinite;
+  animation: sessionSpin 900ms linear infinite;
 
-  box-shadow:
-    0 0 30px
-    rgba(255,255,255,0.06);
+  box-shadow: 0 0 30px rgba(255, 255, 255, 0.06);
 }
 
 @keyframes sessionSpin {
   to {
-    transform:
-      rotate(360deg);
+    transform: rotate(360deg);
   }
 }
 
@@ -458,13 +380,9 @@
 
   border-radius: 50%;
 
-  border:
-    1px solid
-    rgba(255,255,255,0.2);
+  border: 1px solid rgba(255, 255, 255, 0.2);
 
-  box-shadow:
-    0 0 30px
-    rgba(255,255,255,0.07);
+  box-shadow: 0 0 30px rgba(255, 255, 255, 0.07);
 }
 
 .analysis-placeholder-orb span {
@@ -473,64 +391,43 @@
 
   border-radius: 50%;
 
-  background:
-    #efefec;
+  background: #efefec;
 
-  box-shadow:
-    0 0 14px
-    rgba(255,255,255,0.45);
+  box-shadow: 0 0 14px rgba(255, 255, 255, 0.45);
 }
 
 .analysis-placeholder h2 {
-  margin:
-    26px
-    0
-    0;
+  margin: 26px 0 0;
 
-  color:
-    #e8e8e5;
+  color: #e8e8e5;
 
-  font-size:
-    26px;
+  font-size: 26px;
 
-  font-weight:
-    500;
+  font-weight: 500;
 
-  letter-spacing:
-    -0.035em;
+  letter-spacing: -0.035em;
 }
 
 .analysis-placeholder p {
-  max-width:
-    440px;
+  max-width: 440px;
 
-  margin:
-    14px
-    0
-    0;
+  margin: 14px 0 0;
 
-  color:
-    #6d6d69;
+  color: #6d6d69;
 
-  font-size:
-    11px;
+  font-size: 11px;
 
-  line-height:
-    1.7;
+  line-height: 1.7;
 }
 
 .analysis-next-copy {
-  max-width:
-    450px;
+  max-width: 450px;
 
-  color:
-    #777773;
+  color: #777773;
 
-  font-size:
-    10px;
+  font-size: 10px;
 
-  line-height:
-    1.7;
+  line-height: 1.7;
 }
 
 /* ============================================================
@@ -538,8 +435,7 @@
 ============================================================ */
 
 .viva-answer-received {
-  margin-top:
-    48px;
+  margin-top: 48px;
 
   display: flex;
 
@@ -554,28 +450,1086 @@
 
   border-radius: 50%;
 
-  background:
-    #f0f0ed;
+  background: #f0f0ed;
 
-  box-shadow:
-    0 0 16px
-      rgba(255,255,255,0.45);
+  box-shadow: 0 0 16px rgba(255, 255, 255, 0.45);
 }
 
 .viva-answer-received p {
-  margin:
-    14px
-    0
-    0;
+  margin: 14px 0 0;
 
-  color:
-    #777773;
+  color: #777773;
 
-  font-size:
-    10px;
+  font-size: 10px;
 }
 
 .viva-answer-received .rapid-next {
-  margin-top:
-    28px;
+  margin-top: 28px;
+}
+
+/* =========================================================
+   Study Pack Coverage
+   ========================================================= */
+
+.sidebar-progress-card,
+.sidebar-coverage-card {
+  padding: 1.2rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 1.2rem;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.sidebar-coverage-card {
+  margin-top: 1rem;
+}
+
+.coverage-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.coverage-heading strong {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 1.8rem;
+  line-height: 1;
+}
+
+.coverage-count {
+  font-size: 0.76rem;
+  color: rgba(255, 255, 255, 0.5);
+  white-space: nowrap;
+}
+
+.coverage-track {
+  width: 100%;
+  height: 0.42rem;
+  margin-top: 1rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.coverage-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.55),
+    rgba(255, 255, 255, 0.95)
+  );
+  transition: width 500ms ease;
+}
+
+.sidebar-progress-copy {
+  margin-top: 0.85rem;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.48);
+}
+
+.mastery-ring-inner span {
+  display: block;
+  margin-top: 0.18rem;
+  font-size: 0.62rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: rgba(255, 255, 255, 0.42);
+}
+
+/* =========================================================
+   FINAL STUDY SIDEBAR
+   Question panel intentionally untouched.
+   ========================================================= */
+
+.study-sidebar-final {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  width: 100%;
+}
+
+.study-sidebar-final .final-sidebar-card {
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 22px;
+  background:
+    radial-gradient(
+      circle at 50% 30%,
+      rgba(255, 255, 255, 0.025),
+      transparent 55%
+    ),
+    rgba(7, 8, 9, 0.78);
+  box-sizing: border-box;
+}
+
+.study-sidebar-final .final-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.study-sidebar-final .final-title-with-info {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  color: rgba(255, 255, 255, 0.94);
+}
+
+.study-sidebar-final .final-session-number {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+/* -------------------------
+   Info icon + tooltip
+   ------------------------- */
+
+.study-sidebar-final .final-info-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.study-sidebar-final .final-info-button {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  margin: 0;
+  padding: 0;
+
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 50%;
+
+  background: transparent;
+
+  color: rgba(255, 255, 255, 0.88);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+
+  cursor: help;
+}
+
+.study-sidebar-final .final-info-tooltip {
+  position: absolute;
+  z-index: 50;
+
+  top: calc(100% + 10px);
+  left: 50%;
+
+  width: 220px;
+  padding: 10px 12px;
+
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 10px;
+
+  background: rgba(13, 14, 15, 0.98);
+  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.55);
+
+  color: rgba(255, 255, 255, 0.76);
+
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.5;
+
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+
+  transform: translate(-50%, -4px);
+
+  transition:
+    opacity 140ms ease,
+    transform 140ms ease,
+    visibility 140ms ease;
+}
+
+.study-sidebar-final .final-info-wrap:hover .final-info-tooltip,
+.study-sidebar-final .final-info-wrap:focus-within .final-info-tooltip {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, 0);
+}
+
+/* =========================================================
+   SESSION MASTERY
+   ========================================================= */
+
+.study-sidebar-final .final-mastery-card {
+  padding: 22px 22px 25px;
+}
+
+.study-sidebar-final .final-mastery-ring-wrap {
+  position: relative;
+
+  width: 190px;
+  height: 190px;
+
+  margin: 26px auto 2px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.study-sidebar-final .final-mastery-ring {
+  position: absolute;
+  inset: 0;
+
+  width: 100%;
+  height: 100%;
+
+  overflow: visible;
+}
+
+.study-sidebar-final .final-mastery-track,
+.study-sidebar-final .final-mastery-progress {
+  fill: none;
+  stroke-width: 8;
+}
+
+.study-sidebar-final .final-mastery-track {
+  stroke: rgba(255, 255, 255, 0.17);
+}
+
+.study-sidebar-final .final-mastery-progress {
+  stroke: rgba(255, 255, 255, 0.97);
+
+  stroke-linecap: round;
+
+  transform: rotate(-90deg);
+  transform-origin: 50% 50%;
+
+  transition: stroke-dashoffset 650ms ease;
+}
+
+.study-sidebar-final .final-mastery-value {
+  position: relative;
+  z-index: 2;
+
+  font-size: 39px;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: -0.045em;
+
+  color: rgba(255, 255, 255, 0.97);
+}
+
+/* =========================================================
+   STUDY PACK COVERAGE
+   ========================================================= */
+
+.study-sidebar-final .final-coverage-card {
+  padding: 22px;
+}
+
+.study-sidebar-final .final-coverage-values {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+
+  margin-top: 27px;
+}
+
+.study-sidebar-final .final-coverage-values strong {
+  font-size: 34px;
+  font-weight: 400;
+  line-height: 1;
+
+  letter-spacing: -0.04em;
+
+  color: rgba(255, 255, 255, 0.97);
+}
+
+.study-sidebar-final .final-coverage-values span {
+  padding-bottom: 3px;
+
+  font-size: 11px;
+  font-weight: 400;
+
+  color: rgba(255, 255, 255, 0.48);
+}
+
+.study-sidebar-final .final-coverage-track {
+  width: 100%;
+  height: 9px;
+
+  margin-top: 27px;
+
+  overflow: hidden;
+
+  border-radius: 999px;
+
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.study-sidebar-final .final-coverage-fill {
+  height: 100%;
+
+  border-radius: inherit;
+
+  background: rgba(255, 255, 255, 0.96);
+
+  transition: width 550ms ease;
+}
+
+/* =========================================================
+   CONCEPT FLOW
+   ========================================================= */
+
+.study-sidebar-final .final-concept-card {
+  padding: 24px 22px 27px;
+}
+
+.study-sidebar-final .final-concept-card h3 {
+  margin: 0 0 33px;
+
+  font-size: 15px;
+  font-weight: 500;
+
+  letter-spacing: 0;
+
+  color: rgba(255, 255, 255, 0.96);
+}
+
+.study-sidebar-final .final-concept-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.study-sidebar-final .final-concept-item {
+  padding: 0 0 27px;
+}
+
+.study-sidebar-final .final-concept-item + .final-concept-item {
+  padding-top: 27px;
+
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.study-sidebar-final .final-concept-item:last-child {
+  padding-bottom: 0;
+}
+
+.study-sidebar-final .final-concept-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+
+  margin-bottom: 18px;
+
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.study-sidebar-final .final-concept-label-row > span {
+  min-width: 0;
+
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+  font-size: 12px;
+  font-weight: 450;
+}
+
+.study-sidebar-final .final-concept-label-row > strong {
+  flex-shrink: 0;
+
+  font-size: 12px;
+  font-weight: 400;
+
+  color: rgba(255, 255, 255, 0.86);
+}
+
+/* -------------------------
+   Segmented concept bar
+   ------------------------- */
+
+.study-sidebar-final .final-segment-bar {
+  display: grid;
+
+  grid-template-columns: repeat(20, minmax(0, 1fr));
+
+  gap: 3px;
+
+  width: 100%;
+}
+
+.study-sidebar-final .final-segment {
+  display: block;
+
+  height: 11px;
+
+  border-radius: 2px;
+
+  background: rgba(255, 255, 255, 0.12);
+
+  transition:
+    background 250ms ease,
+    box-shadow 250ms ease;
+}
+
+.study-sidebar-final .final-segment-filled {
+  background: rgba(255, 255, 255, 0.96);
+
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.08);
+}
+
+/* =========================================================
+   Responsive sidebar sizing
+   ========================================================= */
+
+@media (max-width: 1180px) {
+  .study-sidebar-final .final-mastery-ring-wrap {
+    width: 165px;
+    height: 165px;
+  }
+
+  .study-sidebar-final .final-mastery-value {
+    font-size: 34px;
+  }
+}
+
+/* =========================================================
+   Continuous Concept Flow progress
+   ========================================================= */
+
+.study-sidebar-final .final-concept-track {
+  width: 100%;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.study-sidebar-final .final-concept-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: rgba(255, 255, 255, 0.96);
+  transition: width 500ms ease;
+}
+
+/* =========================================================
+   Concept Map hover
+   ========================================================= */
+
+.study-sidebar-final .concept-flow-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 33px;
+}
+
+.study-sidebar-final .concept-flow-title-row h3 {
+  margin: 0;
+}
+
+.study-sidebar-final .concept-map-trigger {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.study-sidebar-final .concept-map-button {
+  flex-shrink: 0;
+}
+
+.study-sidebar-final .concept-map-popover {
+  position: absolute;
+  z-index: 100;
+
+  top: -26px;
+  right: calc(100% + 16px);
+
+  width: 440px;
+  min-height: 350px;
+
+  padding: 18px;
+
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 18px;
+
+  background:
+    radial-gradient(
+      circle at 55% 45%,
+      rgba(255, 255, 255, 0.055),
+      transparent 58%
+    ),
+    rgba(8, 9, 10, 0.985);
+
+  box-shadow:
+    0 28px 80px rgba(0, 0, 0, 0.68),
+    inset 0 1px 0 rgba(255, 255, 255, 0.035);
+
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+
+  transform: translateX(8px) scale(0.985);
+
+  transform-origin: top right;
+
+  transition:
+    opacity 160ms ease,
+    visibility 160ms ease,
+    transform 180ms ease;
+}
+
+.study-sidebar-final .concept-map-trigger:hover .concept-map-popover,
+.study-sidebar-final .concept-map-trigger:focus-within .concept-map-popover {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+
+  transform: translateX(0) scale(1);
+}
+
+.study-sidebar-final .concept-map-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+
+  min-height: 24px;
+}
+
+.study-sidebar-final .concept-map-header > strong {
+  font-size: 12px;
+  font-weight: 550;
+  letter-spacing: 0.08em;
+
+  color: rgba(255, 255, 255, 0.94);
+}
+
+.study-sidebar-final .concept-map-header > span {
+  font-size: 9px;
+
+  color: rgba(255, 255, 255, 0.42);
+}
+
+.study-sidebar-final .concept-map-svg {
+  display: block;
+
+  width: 100%;
+  height: 300px;
+
+  margin-top: 8px;
+
+  overflow: visible;
+}
+
+.study-sidebar-final .concept-map-edge {
+  stroke: rgba(255, 255, 255, 0.18);
+  stroke-width: 1.2;
+
+  transition:
+    stroke 160ms ease,
+    stroke-width 160ms ease;
+}
+
+.study-sidebar-final .concept-map-edge-current {
+  stroke: rgba(255, 255, 255, 0.6);
+  stroke-width: 1.8;
+}
+
+.study-sidebar-final .concept-map-arrow {
+  fill: rgba(255, 255, 255, 0.32);
+}
+
+.study-sidebar-final .concept-map-node circle {
+  fill: rgba(16, 17, 18, 0.98);
+
+  stroke: rgba(255, 255, 255, 0.2);
+  stroke-width: 1.3;
+}
+
+.study-sidebar-final .concept-map-node-session circle {
+  stroke: rgba(255, 255, 255, 0.5);
+
+  fill: rgba(255, 255, 255, 0.055);
+}
+
+.study-sidebar-final .concept-map-node-current circle {
+  fill: rgba(255, 255, 255, 0.95);
+
+  stroke: rgba(255, 255, 255, 1);
+
+  stroke-width: 2;
+}
+
+.study-sidebar-final .concept-map-node text {
+  fill: rgba(255, 255, 255, 0.46);
+
+  font-size: 8px;
+  font-family: inherit;
+}
+
+.study-sidebar-final .concept-map-node-session text {
+  fill: rgba(255, 255, 255, 0.7);
+}
+
+.study-sidebar-final .concept-map-node-current text {
+  fill: rgba(255, 255, 255, 0.98);
+
+  font-weight: 600;
+}
+
+.study-sidebar-final .concept-map-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  min-height: 285px;
+
+  color: rgba(255, 255, 255, 0.38);
+
+  font-size: 11px;
+  text-align: center;
+}
+
+/*
+ * If the viewport gets narrow, shrink the map rather
+ * than allowing it to run over the question panel.
+ */
+@media (max-width: 1180px) {
+  .study-sidebar-final .concept-map-popover {
+    width: 360px;
+  }
+}
+
+/* =========================================================
+   Concept Flow Hover v3
+   Compact straight vertical learning path
+   ========================================================= */
+
+.study-sidebar-final .concept-flow-hover-trigger {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.study-sidebar-final .concept-flow-hover-button {
+  flex-shrink: 0;
+}
+
+/* Floating panel opens toward the left of the sidebar. */
+
+.study-sidebar-final .concept-flow-hover-panel {
+  position: absolute;
+  z-index: 120;
+
+  top: -32px;
+  right: calc(100% + 16px);
+
+  width: 390px;
+  min-height: 470px;
+
+  padding: 24px 25px;
+
+  box-sizing: border-box;
+
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 22px;
+
+  background:
+    radial-gradient(
+      circle at 38% 48%,
+      rgba(255, 255, 255, 0.035),
+      transparent 45%
+    ),
+    rgba(7, 8, 9, 0.985);
+
+  box-shadow:
+    0 30px 90px rgba(0, 0, 0, 0.72),
+    inset 0 1px 0 rgba(255, 255, 255, 0.035);
+
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+
+  transform: translateX(7px) scale(0.985);
+
+  transform-origin: top right;
+
+  transition:
+    opacity 160ms ease,
+    transform 180ms ease,
+    visibility 160ms ease;
+}
+
+.study-sidebar-final
+  .concept-flow-hover-trigger:hover
+  .concept-flow-hover-panel,
+.study-sidebar-final
+  .concept-flow-hover-trigger:focus-within
+  .concept-flow-hover-panel {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+
+  transform: translateX(0) scale(1);
+}
+
+/* Header */
+
+.study-sidebar-final .concept-flow-hover-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  gap: 18px;
+
+  padding-bottom: 18px;
+}
+
+.study-sidebar-final .concept-flow-hover-header > strong {
+  font-size: 13px;
+  font-weight: 600;
+
+  letter-spacing: 0.12em;
+
+  color: rgba(255, 255, 255, 0.96);
+}
+
+.study-sidebar-final .concept-flow-hover-header > span {
+  font-size: 9px;
+  font-weight: 400;
+
+  color: rgba(255, 255, 255, 0.4);
+}
+
+/* =========================================================
+   Vertical path
+   ========================================================= */
+
+.study-sidebar-final .concept-path-shell {
+  position: relative;
+
+  display: block;
+
+  min-height: 390px;
+
+  overflow: hidden;
+}
+
+.study-sidebar-final .concept-path-list {
+  position: relative;
+  z-index: 2;
+
+  display: flex;
+  flex-direction: column;
+
+  gap: 0;
+
+  padding: 18px 0;
+}
+
+/*
+ * One perfectly straight line behind every node.
+ */
+
+.study-sidebar-final .concept-path-line {
+  position: absolute;
+  z-index: 1;
+
+  top: 15px;
+  bottom: 15px;
+
+  left: 26px;
+
+  width: 1px;
+
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba(255, 255, 255, 0.12) 8%,
+    rgba(255, 255, 255, 0.34) 25%,
+    rgba(255, 255, 255, 0.34) 75%,
+    rgba(255, 255, 255, 0.12) 92%,
+    transparent 100%
+  );
+}
+
+/* Individual concept */
+
+.study-sidebar-final .concept-path-item {
+  position: relative;
+
+  display: grid;
+
+  grid-template-columns: 52px minmax(0, 1fr);
+
+  align-items: center;
+
+  min-height: 58px;
+}
+
+/* Node column */
+
+.study-sidebar-final .concept-path-node-wrap {
+  position: relative;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  width: 52px;
+  height: 58px;
+}
+
+.study-sidebar-final .concept-path-node {
+  position: relative;
+  z-index: 3;
+
+  display: block;
+
+  width: 13px;
+  height: 13px;
+
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  border-radius: 4px;
+
+  background: rgba(15, 16, 17, 0.96);
+
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.015);
+
+  transition:
+    background 220ms ease,
+    border-color 220ms ease,
+    box-shadow 220ms ease,
+    transform 220ms ease;
+}
+
+/* Concepts currently selected in this session */
+
+.study-sidebar-final .concept-path-item-session .concept-path-node {
+  border-color: rgba(255, 255, 255, 0.54);
+
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* =========================================================
+   Current concept
+   ========================================================= */
+
+.study-sidebar-final .concept-path-item-current .concept-path-node {
+  width: 17px;
+  height: 17px;
+
+  border-color: rgba(255, 255, 255, 1);
+
+  background: rgba(255, 255, 255, 0.98);
+
+  box-shadow:
+    0 0 8px rgba(255, 255, 255, 0.8),
+    0 0 22px rgba(255, 255, 255, 0.42),
+    0 0 48px rgba(255, 255, 255, 0.17);
+
+  transform: scale(1.04);
+}
+
+/*
+ * Slight glow on the straight path around the active node.
+ */
+
+.study-sidebar-final
+  .concept-path-item-current
+  .concept-path-node-wrap::before {
+  content: "";
+
+  position: absolute;
+
+  width: 1px;
+  height: 48px;
+
+  left: 50%;
+  top: 50%;
+
+  transform: translate(-50%, -50%);
+
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    rgba(255, 255, 255, 0.85),
+    transparent
+  );
+
+  filter: blur(0.2px);
+}
+
+/* =========================================================
+   Concept copy
+   ========================================================= */
+
+.study-sidebar-final .concept-path-copy {
+  display: flex;
+  flex-direction: column;
+
+  gap: 4px;
+
+  min-width: 0;
+
+  padding-left: 9px;
+}
+
+.study-sidebar-final .concept-path-copy strong {
+  overflow: hidden;
+
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+  font-size: 12px;
+  font-weight: 420;
+
+  color: rgba(255, 255, 255, 0.48);
+
+  transition:
+    color 180ms ease,
+    font-weight 180ms ease,
+    transform 180ms ease;
+}
+
+.study-sidebar-final .concept-path-item-session .concept-path-copy strong {
+  color: rgba(255, 255, 255, 0.69);
+}
+
+.study-sidebar-final .concept-path-item-current .concept-path-copy strong {
+  font-size: 13px;
+  font-weight: 600;
+
+  color: rgba(255, 255, 255, 1);
+}
+
+.study-sidebar-final .concept-path-copy > span {
+  font-size: 8px;
+  font-weight: 500;
+
+  letter-spacing: 0.18em;
+
+  color: rgba(255, 255, 255, 0.48);
+}
+
+/* =========================================================
+   Soft top/bottom fade — makes path feel continuous
+   ========================================================= */
+
+.study-sidebar-final .concept-path-fade {
+  position: absolute;
+  z-index: 5;
+
+  left: 0;
+  right: 0;
+
+  height: 40px;
+
+  pointer-events: none;
+}
+
+.study-sidebar-final .concept-path-fade-top {
+  top: 0;
+
+  background: linear-gradient(to bottom, rgba(7, 8, 9, 1), transparent);
+}
+
+.study-sidebar-final .concept-path-fade-bottom {
+  bottom: 0;
+
+  background: linear-gradient(to top, rgba(7, 8, 9, 1), transparent);
+}
+
+.study-sidebar-final .concept-flow-hover-empty {
+  display: flex;
+
+  min-height: 380px;
+
+  align-items: center;
+  justify-content: center;
+
+  color: rgba(255, 255, 255, 0.38);
+
+  font-size: 11px;
+}
+
+/* Compact viewport */
+
+@media (max-width: 1180px) {
+  .study-sidebar-final .concept-flow-hover-panel {
+    width: 340px;
+  }
+}
+
+/* =========================================================
+   Concept Flow — opaque node refinement
+   Straight line disappears behind every square node.
+   ========================================================= */
+
+.study-sidebar-final .concept-path-node {
+  position: relative;
+  z-index: 4;
+
+  background: rgb(120, 120, 120);
+
+  border: 1px solid rgba(255, 255, 255, 0.42);
+
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 2px 8px rgba(0, 0, 0, 0.28);
+}
+
+/*
+ * Concepts selected in this session stay slightly brighter,
+ * but remain fully opaque so the vertical path never shows
+ * through the square.
+ */
+.study-sidebar-final .concept-path-item-session .concept-path-node {
+  background: rgb(145, 145, 145);
+
+  border-color: rgba(255, 255, 255, 0.58);
+}
+
+/*
+ * Current concept remains the bright focal node.
+ */
+.study-sidebar-final .concept-path-item-current .concept-path-node {
+  background: rgb(248, 248, 248);
+
+  border-color: rgba(255, 255, 255, 1);
+
+  box-shadow:
+    0 0 8px rgba(255, 255, 255, 0.85),
+    0 0 22px rgba(255, 255, 255, 0.46),
+    0 0 46px rgba(255, 255, 255, 0.2);
+}
+
+/*
+ * Put the vertical line clearly behind the nodes.
+ */
+.study-sidebar-final .concept-path-line {
+  z-index: 1;
+}
+
+/*
+ * Node column stays above the line.
+ */
+.study-sidebar-final .concept-path-node-wrap {
+  z-index: 3;
 }

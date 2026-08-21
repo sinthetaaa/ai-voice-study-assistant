@@ -8,8 +8,10 @@ import StudySidebar from "../../components/StudySidebar";
 import VoiceOrb from "../../components/VoiceOrb";
 
 import {
+  ConceptGraph,
   QuestionSpeechResult,
   StudyLoopApiError,
+  StudyPackCoverage,
   StudySession,
   VoiceAnswerResult,
   studyLoopApi,
@@ -42,6 +44,10 @@ function StudySessionPage() {
   const [loading, setLoading] = useState(true);
 
   const [error, setError] = useState<string | null>(null);
+
+  const [coverage, setCoverage] = useState<StudyPackCoverage | null>(null);
+
+  const [conceptGraph, setConceptGraph] = useState<ConceptGraph | null>(null);
 
   const [view, setView] = useState<StudyView>("question");
 
@@ -85,8 +91,37 @@ function StudySessionPage() {
       try {
         const state = await studyLoopApi.getStudySession(sessionId!);
 
+        let coverageState: StudyPackCoverage | null = null;
+
+        let conceptGraphState: ConceptGraph | null = null;
+
+        const [coverageResult, graphResult] = await Promise.allSettled([
+          studyLoopApi.getStudyPackCoverage(state.studyPackId),
+
+          studyLoopApi.getConceptGraph(state.studyPackId),
+        ]);
+
+        if (coverageResult.status === "fulfilled") {
+          coverageState = coverageResult.value;
+        } else {
+          console.warn(
+            "Could not load Study Pack coverage:",
+            coverageResult.reason,
+          );
+        }
+
+        if (graphResult.status === "fulfilled") {
+          conceptGraphState = graphResult.value;
+        } else {
+          console.warn("Could not load Concept Graph:", graphResult.reason);
+        }
+
         if (!cancelled) {
           setSession(state);
+
+          setCoverage(coverageState);
+
+          setConceptGraph(conceptGraphState);
 
           setError(null);
         }
@@ -263,6 +298,21 @@ function StudySessionPage() {
         sessionId,
         wavAudio,
       );
+
+      try {
+        const coverageState = await studyLoopApi.getStudyPackCoverage(
+          result.answer.session.studyPackId,
+        );
+
+        setCoverage(coverageState);
+      } catch (coverageError) {
+        /*
+         * Coverage is supplemental progress information.
+         * A temporary refresh failure must not interrupt
+         * the answer/evaluation flow.
+         */
+        console.warn("Could not refresh Study Pack coverage:", coverageError);
+      }
 
       setVoiceResult(result);
 
@@ -485,6 +535,8 @@ function StudySessionPage() {
         result={voiceResult}
         progress={analysisProgress}
         audioBlocked={analysisAudioBlocked}
+        coverage={coverage}
+        conceptGraph={conceptGraph}
         onHearAnalysis={hearBlockedAnalysis}
         onNext={nextQuestion}
         onExit={() => router.push("/")}
@@ -622,6 +674,12 @@ function StudySessionPage() {
 
           <StudySidebar
             mastery={masteryPercent}
+            coverage={coverage?.percentage ?? 0}
+            testedConceptCount={coverage?.testedConceptCount}
+            totalConceptCount={coverage?.totalConceptCount}
+            sessionNumber={session.sessionNumber ?? 1}
+            currentConceptId={session.currentConcept?.id ?? null}
+            conceptGraph={conceptGraph}
             conceptFlow={session.conceptFlow}
           />
         </div>
@@ -634,6 +692,8 @@ function AnalysisScreen({
   result,
   progress,
   audioBlocked,
+  coverage,
+  conceptGraph,
   onHearAnalysis,
   onNext,
   onExit,
@@ -643,6 +703,10 @@ function AnalysisScreen({
   progress: number;
 
   audioBlocked: boolean;
+
+  coverage: StudyPackCoverage | null;
+
+  conceptGraph: ConceptGraph | null;
 
   onHearAnalysis: () => void;
 
@@ -669,16 +733,13 @@ function AnalysisScreen({
 
   const remediation = result.answer.learningStep?.remediation;
 
-  const showScore = progress >= 0.12;
-
-  const showTranscript = progress >= 0.25;
-
-  const showFeedback = progress >= 0.42;
-
-  const showDiagnostics = progress >= 0.62;
-
-  const showRemediation = progress >= 0.78;
-
+  /*
+   * Analysis content is available immediately.
+   *
+   * Ryan's narration progress must not control the visibility
+   * of evaluation results. Progress is retained only for the
+   * narration state and Next Question availability.
+   */
   const analysisFinished = progress >= 0.98;
 
   return (
@@ -767,11 +828,7 @@ function AnalysisScreen({
                 </div>
               </div>
 
-              <div
-                className={
-                  showScore ? "analysis-reveal visible" : "analysis-reveal"
-                }
-              >
+              <div className="analysis-reveal visible">
                 <div className="answer-score-card glass-card">
                   <div>
                     <span>Answer score</span>
@@ -789,11 +846,7 @@ function AnalysisScreen({
                 </div>
               </div>
 
-              <div
-                className={
-                  showTranscript ? "analysis-reveal visible" : "analysis-reveal"
-                }
-              >
+              <div className="analysis-reveal visible">
                 <section className="transcription-card glass-card">
                   <p className="section-kicker">WHAT STUDYLOOP HEARD</p>
 
@@ -805,11 +858,7 @@ function AnalysisScreen({
                 </section>
               </div>
 
-              <div
-                className={
-                  showFeedback ? "analysis-reveal visible" : "analysis-reveal"
-                }
-              >
+              <div className="analysis-reveal visible">
                 <section className="feedback-card glass-card">
                   <p className="section-kicker">FEEDBACK</p>
 
@@ -817,13 +866,7 @@ function AnalysisScreen({
                 </section>
               </div>
 
-              <div
-                className={
-                  showDiagnostics
-                    ? "analysis-reveal visible"
-                    : "analysis-reveal"
-                }
-              >
+              <div className="analysis-reveal visible">
                 <div className="diagnostic-grid">
                   <DiagnosticCard
                     title="MISSING POINTS"
@@ -840,13 +883,7 @@ function AnalysisScreen({
               </div>
 
               {remediation && (
-                <div
-                  className={
-                    showRemediation
-                      ? "analysis-reveal visible"
-                      : "analysis-reveal"
-                  }
-                >
+                <div className="analysis-reveal visible">
                   <section className="remediation-card glass-card">
                     <p className="section-kicker">
                       FOCUS BEFORE THE NEXT QUESTION
@@ -875,6 +912,12 @@ function AnalysisScreen({
 
           <StudySidebar
             mastery={masteryPercent}
+            coverage={coverage?.percentage ?? 0}
+            testedConceptCount={coverage?.testedConceptCount}
+            totalConceptCount={coverage?.totalConceptCount}
+            sessionNumber={updatedSession.sessionNumber ?? 1}
+            currentConceptId={updatedSession.currentConcept?.id ?? null}
+            conceptGraph={conceptGraph}
             conceptFlow={updatedSession.conceptFlow}
           />
         </div>
