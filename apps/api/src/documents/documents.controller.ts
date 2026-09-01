@@ -1,14 +1,18 @@
 import {
   Controller,
+  Get,
   Param,
   ParseUUIDPipe,
   Post,
+  Res,
+  StreamableFile,
   UploadedFiles,
   UnsupportedMediaTypeException,
   UseInterceptors,
 } from '@nestjs/common';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
+import type { Response } from 'express';
 import { DocumentsService } from './documents.service';
 import {
   isSupportedDocument,
@@ -18,6 +22,34 @@ import {
 @Controller('study-packs/:studyPackId/documents')
 export class DocumentsController {
   constructor(private readonly documentsService: DocumentsService) {}
+
+  @Get(':documentId/file')
+  async getDocumentFile(
+    @Param('studyPackId', new ParseUUIDPipe())
+    studyPackId: string,
+
+    @Param('documentId', new ParseUUIDPipe())
+    documentId: string,
+
+    @Res({ passthrough: true })
+    response: Response,
+  ): Promise<StreamableFile> {
+    const file = await this.documentsService.getDocumentFile(
+      studyPackId,
+      documentId,
+    );
+
+    response.setHeader('Content-Type', file.mimeType);
+
+    response.setHeader(
+      'Content-Disposition',
+      `inline; filename*=UTF-8''${encodeURIComponent(file.originalName)}`,
+    );
+
+    response.setHeader('Cache-Control', 'private, max-age=3600');
+
+    return new StreamableFile(file.buffer);
+  }
 
   @Post()
   @UseInterceptors(

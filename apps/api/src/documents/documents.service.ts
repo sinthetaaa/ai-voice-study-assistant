@@ -15,6 +15,55 @@ export class DocumentsService {
     private readonly ingestionQueue: IngestionQueueService,
   ) {}
 
+  async getDocumentFile(
+    studyPackId: string,
+    documentId: string,
+  ): Promise<{
+    buffer: Buffer;
+    originalName: string;
+    mimeType: string;
+  }> {
+    const document = await this.prisma.document.findFirst({
+      where: {
+        id: documentId,
+
+        studyPackId,
+      },
+
+      select: {
+        id: true,
+
+        originalName: true,
+
+        mimeType: true,
+
+        storageKey: true,
+
+        status: true,
+      },
+    });
+
+    if (!document) {
+      throw new NotFoundException(
+        `Document ${documentId} was not found in Study Pack ${studyPackId}`,
+      );
+    }
+
+    if (!document.storageKey) {
+      throw new NotFoundException(`Document ${documentId} has no stored file`);
+    }
+
+    const buffer = await this.storage.readDocument(document.storageKey);
+
+    return {
+      buffer,
+
+      originalName: document.originalName,
+
+      mimeType: document.mimeType || 'application/octet-stream',
+    };
+  }
+
   async uploadDocuments(studyPackId: string, files: Express.Multer.File[]) {
     if (!files || files.length === 0) {
       throw new BadRequestException(

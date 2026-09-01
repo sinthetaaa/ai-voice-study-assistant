@@ -23,6 +23,7 @@ import {
 
 import {
   StartStudySessionResult,
+  StudySessionAnalysisSourcesResult,
   StudySessionAnswerResult,
   StudySessionStateResult,
   StudySessionsService,
@@ -109,6 +110,20 @@ export class StudySessionsController {
     audio: Express.Multer.File | undefined,
   ): Promise<StudySessionVoiceAnswerResult> {
     return this.studySessionVoiceService.answerSession(sessionId, audio);
+  }
+
+  @Get('study-sessions/:sessionId/attempts/:attemptId/sources')
+  async getAttemptAnalysisSources(
+    @Param('sessionId')
+    sessionId: string,
+
+    @Param('attemptId')
+    attemptId: string,
+  ): Promise<StudySessionAnalysisSourcesResult> {
+    return this.studySessionsService.getAttemptAnalysisSources(
+      sessionId,
+      attemptId,
+    );
   }
 
   @Get('study-sessions/:sessionId')

@@ -336,6 +336,40 @@ export type QuestionSpeechResult = {
       };
 };
 
+export type AnalysisSource = {
+  chunkId: string;
+
+  documentId: string;
+
+  documentName: string;
+
+  mimeType: string;
+
+  unitId: string;
+
+  unitKind: string;
+
+  unitLabel: string;
+
+  unitIndex: number;
+
+  pageNumber: number | null;
+
+  excerpt: string;
+
+  fileUrl: string;
+};
+
+export type AnalysisSourcesResult = {
+  sessionId: string;
+
+  attemptId: string;
+
+  sourceCount: number;
+
+  sources: AnalysisSource[];
+};
+
 export type VoiceAnswerResult = {
   transcription: {
     text: string;
@@ -495,6 +529,14 @@ export const studyLoopApi = {
   getStudySession(sessionId: string) {
     return request<StudySession>(
       `/study-sessions/${encodeURIComponent(sessionId)}`,
+    );
+  },
+
+  getStudySessionAnalysisSources(sessionId: string, attemptId: string) {
+    return request<AnalysisSourcesResult>(
+      `/study-sessions/${encodeURIComponent(
+        sessionId,
+      )}/attempts/${encodeURIComponent(attemptId)}/sources`,
     );
   },
 

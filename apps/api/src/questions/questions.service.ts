@@ -83,37 +83,47 @@ export class QuestionsService {
       sourceChunks: concept.sourceChunks,
     };
 
-    const question = await this.questionAiClient.generateAdaptiveQuestion(
-      aiConcept,
-      {
-        questionType,
-        purpose,
-        focusPoints,
-        previousQuestionPrompt,
-      },
-    );
+    /*
+     * Adaptive generation occasionally returns a prompt that
+     * already exists for this concept.
+     *
+     * A duplicate candidate is not a fatal learner-facing
+     * error. Ask the generator for another variation instead.
+     */
+    const MAX_ADAPTIVE_GENERATION_ATTEMPTS = 3;
 
-    const allowedChunkIds = new Set(
-      concept.sourceChunks.map((chunk) => chunk.id),
-    );
+    let lastDuplicatePrompt: string | null = null;
 
-    for (const chunkId of question.evidenceChunkIds) {
-      if (!allowedChunkIds.has(chunkId)) {
-        throw new BadRequestException(
-          'Adaptive question contains evidence outside concept provenance',
-        );
+    for (
+      let generationAttempt = 0;
+      generationAttempt < MAX_ADAPTIVE_GENERATION_ATTEMPTS;
+      generationAttempt += 1
+    ) {
+      const avoidPrompt = lastDuplicatePrompt ?? previousQuestionPrompt;
+
+      const question = await this.questionAiClient.generateAdaptiveQuestion(
+        aiConcept,
+        {
+          questionType,
+          purpose,
+          focusPoints,
+          previousQuestionPrompt: avoidPrompt,
+        },
+      );
+
+      const allowedChunkIds = new Set(
+        concept.sourceChunks.map((chunk) => chunk.id),
+      );
+
+      for (const chunkId of question.evidenceChunkIds) {
+        if (!allowedChunkIds.has(chunkId)) {
+          throw new BadRequestException(
+            'Adaptive question contains evidence outside concept provenance',
+          );
+        }
       }
-    }
 
-    return this.prisma.$transaction(async (transaction) => {
-      /*
-       * Serialize variant allocation by locking the
-       * concept's question rows for this type.
-       *
-       * The unique database constraint remains the
-       * final protection against collisions.
-       */
-      const existing = await transaction.question.findMany({
+      const existing = await this.prisma.question.findMany({
         where: {
           conceptId,
           type: questionType,
@@ -131,61 +141,97 @@ export class QuestionsService {
 
       const normalizedPrompt = normalizeQuestionPrompt(question.prompt);
 
-      if (
-        existing.some(
-          (item) => normalizeQuestionPrompt(item.prompt) === normalizedPrompt,
-        )
-      ) {
-        throw new BadRequestException(
-          'Adaptive generation produced a question already used for this concept',
-        );
+      const duplicate = existing.some(
+        (item) => normalizeQuestionPrompt(item.prompt) === normalizedPrompt,
+      );
+
+      if (duplicate) {
+        lastDuplicatePrompt = question.prompt;
+
+        continue;
       }
 
-      const nextVariant = (existing[0]?.variant ?? -1) + 1;
-
-      const created = await transaction.question.create({
-        data: {
-          conceptId,
-
-          type: question.type,
-
-          difficulty: question.difficulty,
-
-          variant: nextVariant,
-
-          purpose,
-
-          prompt: question.prompt,
-
-          expectedAnswer: question.expectedAnswer,
-
-          sources: {
-            create: question.evidenceChunkIds.map((chunkId) => ({
-              chunkId,
-              relevance: 1.0,
-            })),
+      return this.prisma.$transaction(async (transaction) => {
+        /*
+         * Re-read inside the transaction because another request
+         * may have persisted a variant after the optimistic check.
+         */
+        const transactionExisting = await transaction.question.findMany({
+          where: {
+            conceptId,
+            type: questionType,
           },
-        },
 
-        select: {
-          id: true,
-          type: true,
-          difficulty: true,
-          prompt: true,
-          variant: true,
-          purpose: true,
-        },
+          select: {
+            variant: true,
+            prompt: true,
+          },
+
+          orderBy: {
+            variant: 'desc',
+          },
+        });
+
+        const duplicateInsideTransaction = transactionExisting.some(
+          (item) => normalizeQuestionPrompt(item.prompt) === normalizedPrompt,
+        );
+
+        if (duplicateInsideTransaction) {
+          throw new BadRequestException(
+            'Adaptive generation produced a question already used for this concept',
+          );
+        }
+
+        const nextVariant = (transactionExisting[0]?.variant ?? -1) + 1;
+
+        const created = await transaction.question.create({
+          data: {
+            conceptId,
+
+            type: question.type,
+
+            difficulty: question.difficulty,
+
+            variant: nextVariant,
+
+            purpose,
+
+            prompt: question.prompt,
+
+            expectedAnswer: question.expectedAnswer,
+
+            sources: {
+              create: question.evidenceChunkIds.map((chunkId) => ({
+                chunkId,
+                relevance: 1.0,
+              })),
+            },
+          },
+
+          select: {
+            id: true,
+            type: true,
+            difficulty: true,
+            prompt: true,
+            variant: true,
+            purpose: true,
+          },
+        });
+
+        return {
+          id: created.id,
+          type: created.type,
+          difficulty: created.difficulty,
+          prompt: created.prompt,
+          variant: created.variant,
+          purpose: created.purpose as AdaptiveQuestionPurpose,
+        };
       });
+    }
 
-      return {
-        id: created.id,
-        type: created.type,
-        difficulty: created.difficulty,
-        prompt: created.prompt,
-        variant: created.variant,
-        purpose: created.purpose as AdaptiveQuestionPurpose,
-      };
-    });
+    throw new BadRequestException(
+      'Adaptive question generation could not produce a fresh question after retries',
+    );
   }
 
   async previewConceptQuestions(

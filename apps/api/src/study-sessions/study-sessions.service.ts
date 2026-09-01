@@ -201,6 +201,40 @@ type PreparedSessionConcept = SessionPlanConcept & {
   questions: StudySessionQuestion[];
 };
 
+export type StudySessionAnalysisSource = {
+  chunkId: string;
+
+  documentId: string;
+
+  documentName: string;
+
+  mimeType: string;
+
+  unitId: string;
+
+  unitKind: string;
+
+  unitLabel: string;
+
+  unitIndex: number;
+
+  pageNumber: number | null;
+
+  excerpt: string;
+
+  fileUrl: string;
+};
+
+export type StudySessionAnalysisSourcesResult = {
+  sessionId: string;
+
+  attemptId: string;
+
+  sourceCount: number;
+
+  sources: StudySessionAnalysisSource[];
+};
+
 @Injectable()
 export class StudySessionsService {
   constructor(
@@ -212,6 +246,198 @@ export class StudySessionsService {
 
     private readonly learningLoopService: LearningLoopService,
   ) {}
+
+  async getAttemptAnalysisSources(
+    sessionId: string,
+    attemptId: string,
+  ): Promise<StudySessionAnalysisSourcesResult> {
+    /*
+     * Historical source review MUST use the exact
+     * evidence snapshot captured when the learner
+     * answered the question.
+     *
+     * Never reconstruct this from the live
+     * QuestionSource relation.
+     */
+    const attempt = await this.prisma.questionAttempt.findFirst({
+      where: {
+        id: attemptId,
+
+        studySessionId: sessionId,
+      },
+
+      select: {
+        id: true,
+
+        studySessionId: true,
+
+        evidenceChunkIds: true,
+
+        question: {
+          select: {
+            concept: {
+              select: {
+                studyPackId: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!attempt) {
+      throw new NotFoundException(
+        `Question attempt ${attemptId} was not found for Study Session ${sessionId}`,
+      );
+    }
+
+    const evidenceIds = attempt.evidenceChunkIds;
+
+    if (evidenceIds.length === 0) {
+      return {
+        sessionId,
+
+        attemptId,
+
+        sourceCount: 0,
+
+        sources: [],
+      };
+    }
+
+    const chunks = await this.prisma.documentChunk.findMany({
+      where: {
+        id: {
+          in: evidenceIds,
+        },
+      },
+
+      select: {
+        id: true,
+
+        text: true,
+
+        chunkIndex: true,
+
+        unit: {
+          select: {
+            id: true,
+
+            unitIndex: true,
+
+            kind: true,
+
+            label: true,
+
+            metadata: true,
+
+            document: {
+              select: {
+                id: true,
+
+                studyPackId: true,
+
+                originalName: true,
+
+                mimeType: true,
+
+                status: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const chunkMap = new Map(chunks.map((chunk) => [chunk.id, chunk]));
+
+    const sources: StudySessionAnalysisSource[] = [];
+
+    const seenSourceKeys = new Set<string>();
+
+    for (const chunkId of evidenceIds) {
+      const chunk = chunkMap.get(chunkId);
+
+      if (!chunk) {
+        continue;
+      }
+
+      const document = chunk.unit.document;
+
+      /*
+       * Defense in depth:
+       * historical evidence must still belong to
+       * the Study Pack associated with the attempt.
+       */
+      if (document.studyPackId !== attempt.question.concept.studyPackId) {
+        continue;
+      }
+
+      const pageNumber = extractPageNumber(
+        chunk.unit.metadata,
+        chunk.unit.kind,
+        chunk.unit.unitIndex,
+      );
+
+      /*
+       * Avoid showing multiple almost-identical
+       * cards from the same page/unit.
+       */
+      const sourceKey = `${document.id}:${chunk.unit.id}`;
+
+      if (seenSourceKeys.has(sourceKey)) {
+        continue;
+      }
+
+      seenSourceKeys.add(sourceKey);
+
+      sources.push({
+        chunkId: chunk.id,
+
+        documentId: document.id,
+
+        documentName: document.originalName,
+
+        mimeType: document.mimeType,
+
+        unitId: chunk.unit.id,
+
+        unitKind: chunk.unit.kind,
+
+        unitLabel: chunk.unit.label,
+
+        unitIndex: chunk.unit.unitIndex,
+
+        pageNumber,
+
+        excerpt: createAnalysisSourceExcerpt(chunk.text),
+
+        fileUrl:
+          `/study-packs/${document.studyPackId}` +
+          `/documents/${document.id}/file`,
+      });
+
+      /*
+       * Analysis should remain focused.
+       * Two cards match the approved desktop UI;
+       * we allow three so scrollable material
+       * review can support another useful source.
+       */
+      if (sources.length >= 3) {
+        break;
+      }
+    }
+
+    return {
+      sessionId,
+
+      attemptId,
+
+      sourceCount: sources.length,
+
+      sources,
+    };
+  }
 
   async startSession(studyPackId: string): Promise<StartStudySessionResult> {
     const studyPack = await this.prisma.studyPack.findUnique({
@@ -1017,16 +1243,50 @@ export class StudySessionsService {
       evaluation.score,
     );
 
-    const learningStep = await this.learningLoopService.getNextStep(
-      session.studyPackId,
-      conceptId,
-      evaluation.evaluationId,
-      {
-        masteryAfter: sessionMastery.masteryAfter,
+    let learningStep: LearningLoopNextStepResult;
 
-        evidenceWeightAfter: sessionMastery.evidenceWeightAfter,
-      },
-    );
+    try {
+      learningStep = await this.learningLoopService.getNextStep(
+        session.studyPackId,
+        conceptId,
+        evaluation.evaluationId,
+        {
+          masteryAfter: sessionMastery.masteryAfter,
+
+          evidenceWeightAfter: sessionMastery.evidenceWeightAfter,
+        },
+      );
+    } catch (error) {
+      /*
+       * The learner's answer has already been:
+       *
+       * - transcribed
+       * - evaluated
+       * - persisted
+       * - applied to lifetime mastery
+       * - applied to session mastery
+       *
+       * Failure to PREPARE the next adaptive question must
+       * never erase that successful answer result or prevent
+       * the Answer Analysis screen from opening.
+       *
+       * Leave the current question/session pointer unchanged.
+       * The frontend can safely display the completed analysis.
+       * A future retry / next-question request can recover the
+       * adaptive continuation independently.
+       */
+      const updatedSession = await this.getSessionState(session.id);
+
+      return {
+        evaluation,
+
+        learningStep: null,
+
+        reviewStep: null,
+
+        session: updatedSession,
+      };
+    }
 
     /*
      * If this answer successfully completes a scaffold while
@@ -2042,4 +2302,48 @@ export class StudySessionsService {
         return 2;
     }
   }
+}
+
+function extractPageNumber(
+  metadata: unknown,
+  unitKind: string,
+  unitIndex: number,
+): number | null {
+  if (metadata && typeof metadata === 'object' && !Array.isArray(metadata)) {
+    const pageNumber = (metadata as Record<string, unknown>).page_number;
+
+    if (
+      typeof pageNumber === 'number' &&
+      Number.isInteger(pageNumber) &&
+      pageNumber > 0
+    ) {
+      return pageNumber;
+    }
+  }
+
+  /*
+   * PDF parser currently stores page units with
+   * unitIndex equal to the page number as well.
+   */
+  if (
+    unitKind.toLowerCase() === 'page' &&
+    Number.isInteger(unitIndex) &&
+    unitIndex > 0
+  ) {
+    return unitIndex;
+  }
+
+  return null;
+}
+
+function createAnalysisSourceExcerpt(value: string): string {
+  const normalized = value.replace(/\s+/g, ' ').trim();
+
+  const MAX_LENGTH = 360;
+
+  if (normalized.length <= MAX_LENGTH) {
+    return normalized;
+  }
+
+  return normalized.slice(0, MAX_LENGTH).trimEnd() + '…';
 }
