@@ -5,9 +5,13 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import StudySidebar from "../../components/StudySidebar";
+import StudyPdfViewer, {
+  type MaterialStudyPoint,
+} from "../../components/StudyPdfViewer";
 import VoiceOrb from "../../components/VoiceOrb";
 
 import {
+  AnalysisSource,
   ConceptGraph,
   QuestionSpeechResult,
   StudyLoopApiError,
@@ -718,6 +722,65 @@ function AnalysisScreen({
 
   const updatedSession = result.answer.session;
 
+  const [analysisSources, setAnalysisSources] = useState<AnalysisSource[]>([]);
+
+  const [analysisSourcesLoading, setAnalysisSourcesLoading] = useState(true);
+
+  const [analysisSourcesError, setAnalysisSourcesError] = useState<
+    string | null
+  >(null);
+
+  const [openSource, setOpenSource] = useState<AnalysisDocumentSource | null>(
+    null,
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadAnalysisSources() {
+      setAnalysisSourcesLoading(true);
+
+      setAnalysisSourcesError(null);
+
+      try {
+        const sourceResult = await studyLoopApi.getStudySessionAnalysisSources(
+          updatedSession.sessionId,
+          evaluation.attemptId,
+        );
+
+        if (cancelled) {
+          return;
+        }
+
+        setAnalysisSources(sourceResult.sources);
+      } catch (caught) {
+        if (cancelled) {
+          return;
+        }
+
+        console.warn("Could not load answer-analysis sources:", caught);
+
+        setAnalysisSources([]);
+
+        setAnalysisSourcesError(
+          "StudyLoop could not load the supporting material.",
+        );
+      } finally {
+        if (!cancelled) {
+          setAnalysisSourcesLoading(false);
+        }
+      }
+    }
+
+    void loadAnalysisSources();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [updatedSession.sessionId, evaluation.attemptId]);
+
+  const analysisDocuments = groupAnalysisSourcesByDocument(analysisSources);
+
   const answeredConcept = updatedSession.conceptFlow.find(
     (concept) => concept.id === evaluation.conceptId,
   );
@@ -727,19 +790,63 @@ function AnalysisScreen({
       result.answer.learningStep?.mastery.score ??
       0) * 100;
 
+  const scorePercent = Math.round(evaluation.score * 100);
+
   const hasNextQuestion =
     updatedSession.status === "ACTIVE" &&
     Boolean(updatedSession.currentQuestion);
 
   const remediation = result.answer.learningStep?.remediation;
 
+  const keyPointers = [...(remediation?.keyTakeaways ?? [])];
+
+  if (keyPointers.length === 0 && remediation?.focusPoints) {
+    keyPointers.push(...remediation.focusPoints);
+  }
+
   /*
-   * Analysis content is available immediately.
+   * A weak/incorrect answer should never end up with an
+   * empty Key Pointers card just because remediation did
+   * not return explicit takeaways.
    *
-   * Ryan's narration progress must not control the visibility
-   * of evaluation results. Progress is retained only for the
-   * narration state and Next Question availability.
+   * Missing points already describe the essential ideas
+   * the learner needs to include in a stronger answer.
    */
+  if (keyPointers.length === 0 && evaluation.missingPoints.length > 0) {
+    keyPointers.push(...evaluation.missingPoints.slice(0, 3));
+  }
+
+  /*
+   * Deduplicate overlapping remediation/missing points.
+   */
+  const uniqueKeyPointers = Array.from(
+    new Map(
+      keyPointers.map((pointer) => [
+        pointer.trim().toLowerCase(),
+        pointer.trim(),
+      ]),
+    ).values(),
+  ).filter(Boolean);
+
+  const materialStudyPoints = buildMaterialStudyPoints({
+    missingPoints: evaluation.missingPoints,
+    misconceptions: evaluation.misconceptions,
+    keyPointers,
+    remediationExplanation: remediation?.explanation ?? null,
+  });
+
+  const displayKeyPointers = Array.from(
+    new Map(
+      [
+        ...keyPointers,
+        ...(keyPointers.length === 0 ? evaluation.missingPoints : []),
+      ]
+        .map((pointer) => pointer.replace(/\s+/g, " ").trim())
+        .filter(Boolean)
+        .map((pointer) => [pointer.toLowerCase(), pointer]),
+    ).values(),
+  ).slice(0, 3);
+
   const analysisFinished = progress >= 0.98;
 
   return (
@@ -776,10 +883,10 @@ function AnalysisScreen({
         </header>
 
         <div className="study-page-layout">
-          <section className="analysis-panel">
-            <div className="analysis-heading">
+          <section className="analysis-dashboard">
+            <div className="analysis-dashboard-topbar">
               <div>
-                <p className="section-kicker">TOPIC</p>
+                <p className="section-kicker">ANSWER ANALYSIS</p>
 
                 <h1>
                   {result.answer.learningStep?.conceptName ??
@@ -787,126 +894,270 @@ function AnalysisScreen({
                     "Study Analysis"}
                 </h1>
 
-                <span className="small-chip">{evaluation.questionType}</span>
-              </div>
+                <div className="analysis-topic-meta">
+                  <span className="small-chip">{evaluation.questionType}</span>
 
-              <div className="analysis-actions">
-                {audioBlocked && (
-                  <button
-                    className="hear-analysis-button"
-                    onClick={onHearAnalysis}
+                  <span
+                    className={`analysis-result-pill analysis-result-${evaluation.correctness.toLowerCase()}`}
                   >
-                    <SpeakerIcon />
-                    Hear Analysis
-                  </button>
-                )}
-
-                <button
-                  className="next-button"
-                  disabled={!analysisFinished}
-                  onClick={hasNextQuestion ? onNext : onExit}
-                >
-                  {hasNextQuestion ? "Next Question" : "Finish Session"}
-
-                  <ArrowIcon />
-                </button>
+                    {evaluation.correctness}
+                  </span>
+                </div>
               </div>
+
+              {audioBlocked && (
+                <button
+                  className="hear-analysis-button"
+                  onClick={onHearAnalysis}
+                >
+                  <SpeakerIcon />
+                  Hear Analysis
+                </button>
+              )}
             </div>
 
-            <div className="analysis-content real-analysis">
-              <div className="analysis-title-row analysis-reveal visible">
+            <div className="analysis-metric-grid">
+              <section className="analysis-metric-card analysis-score-card">
+                <div className="analysis-card-label">ANSWER SCORE</div>
+
+                <div className="analysis-score-row">
+                  <strong>
+                    {scorePercent}
+                    <span>/100</span>
+                  </strong>
+
+                  <span
+                    className={`analysis-score-status analysis-score-status-${evaluation.correctness.toLowerCase()}`}
+                  >
+                    {correctnessTitle(evaluation.correctness)}
+                  </span>
+                </div>
+
+                <div className="analysis-score-track-v2">
+                  <div
+                    style={{
+                      width: `${scorePercent}%`,
+                    }}
+                  />
+                </div>
+              </section>
+
+              <section className="analysis-metric-card analysis-mastery-card">
+                <div className="analysis-card-label">SESSION MASTERY</div>
+
+                <div className="analysis-mastery-number">
+                  {Math.round(masteryPercent)}%
+                </div>
+
+                <p>Updated from the evidence in this answer.</p>
+              </section>
+            </div>
+
+            <section className="analysis-response-card">
+              <div className="analysis-card-label">
+                YOUR ANSWER (TRANSCRIPTION)
+              </div>
+
+              <p>
+                &ldquo;
+                {result.transcription.text}
+                &rdquo;
+              </p>
+            </section>
+
+            <div className="analysis-diagnostic-dashboard">
+              <section className="analysis-insight-card analysis-positive-card">
+                <div className="analysis-insight-heading">
+                  <span className="analysis-insight-icon">
+                    {evaluation.correctness === "INCORRECT" ? "−" : "✓"}
+                  </span>
+
+                  <span>
+                    {evaluation.correctness === "INCORRECT"
+                      ? "CORRECT ELEMENTS"
+                      : "WHAT YOU GOT RIGHT"}
+                  </span>
+                </div>
+
+                <p className="analysis-feedback-copy">
+                  {evaluation.correctness === "INCORRECT"
+                    ? "No correct elements were identified in this answer."
+                    : evaluation.feedback}
+                </p>
+              </section>
+
+              <section className="analysis-insight-card analysis-missed-card">
+                <div className="analysis-insight-heading">
+                  <span className="analysis-insight-icon">−</span>
+
+                  <span>WHAT YOU MISSED</span>
+                </div>
+
+                {evaluation.missingPoints.length > 0 ? (
+                  <div className="analysis-point-list">
+                    {evaluation.missingPoints.map((item) => (
+                      <div className="analysis-point" key={item}>
+                        <span />
+
+                        <p>{item}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="analysis-empty-copy">
+                    No important missing points were identified.
+                  </p>
+                )}
+              </section>
+            </div>
+
+            <section className="analysis-misconception-card">
+              <div className="analysis-insight-heading">
+                <span className="analysis-warning-icon">!</span>
+
+                <span>MISCONCEPTIONS</span>
+              </div>
+
+              {evaluation.misconceptions.length > 0 ? (
+                <div className="analysis-point-list">
+                  {evaluation.misconceptions.map((item) => (
+                    <div className="analysis-point" key={item}>
+                      <span />
+
+                      <p>{item}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="analysis-empty-copy">
+                  No misconception was detected in this answer.
+                </p>
+              )}
+            </section>
+
+            <section className="analysis-key-pointers">
+              <div className="analysis-section-heading">
                 <div>
-                  <p className="section-kicker">ANSWER ANALYSIS</p>
+                  <p className="section-kicker">KEY POINTERS</p>
 
-                  <h2>{correctnessTitle(evaluation.correctness)}</h2>
-                </div>
-
-                <div
-                  className={`correctness-badge correctness-${evaluation.correctness.toLowerCase()}`}
-                >
-                  {evaluation.correctness}
+                  <h2>What a stronger answer should contain</h2>
                 </div>
               </div>
 
-              <div className="analysis-reveal visible">
-                <div className="answer-score-card glass-card">
-                  <div>
-                    <span>Answer score</span>
+              {displayKeyPointers.length > 0 ? (
+                <div className="analysis-pointer-list analysis-pointer-checklist">
+                  {displayKeyPointers.map((pointer, index) => (
+                    <div
+                      className={`analysis-pointer-item analysis-pointer-color-${
+                        index % 3
+                      }`}
+                      key={`${index}-${pointer}`}
+                    >
+                      <span className="analysis-pointer-number">
+                        {String(index + 1).padStart(2, "0")}
+                      </span>
 
-                    <strong>{Math.round(evaluation.score * 100)}%</strong>
-                  </div>
-
-                  <div className="answer-score-track">
-                    <span
-                      style={{
-                        width: `${Math.round(evaluation.score * 100)}%`,
-                      }}
-                    />
-                  </div>
+                      <p>{pointer}</p>
+                    </div>
+                  ))}
                 </div>
-              </div>
-
-              <div className="analysis-reveal visible">
-                <section className="transcription-card glass-card">
-                  <p className="section-kicker">WHAT STUDYLOOP HEARD</p>
+              ) : (
+                <div className="analysis-pointer-complete">
+                  <span>✓</span>
 
                   <p>
-                    &ldquo;
-                    {result.transcription.text}
-                    &rdquo;
+                    Your answer already covered the essential points for this
+                    question.
                   </p>
-                </section>
-              </div>
-
-              <div className="analysis-reveal visible">
-                <section className="feedback-card glass-card">
-                  <p className="section-kicker">FEEDBACK</p>
-
-                  <p>{evaluation.feedback}</p>
-                </section>
-              </div>
-
-              <div className="analysis-reveal visible">
-                <div className="diagnostic-grid">
-                  <DiagnosticCard
-                    title="MISSING POINTS"
-                    items={evaluation.missingPoints}
-                    emptyText="No important missing points were identified."
-                  />
-
-                  <DiagnosticCard
-                    title="MISCONCEPTIONS"
-                    items={evaluation.misconceptions}
-                    emptyText="No misconception was identified."
-                  />
-                </div>
-              </div>
-
-              {remediation && (
-                <div className="analysis-reveal visible">
-                  <section className="remediation-card glass-card">
-                    <p className="section-kicker">
-                      FOCUS BEFORE THE NEXT QUESTION
-                    </p>
-
-                    <p className="remediation-explanation">
-                      {remediation.explanation}
-                    </p>
-
-                    {remediation.keyTakeaways.length > 0 && (
-                      <div className="takeaway-list">
-                        {remediation.keyTakeaways.map((takeaway) => (
-                          <div key={takeaway} className="takeaway">
-                            <span>✓</span>
-
-                            <p>{takeaway}</p>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </section>
                 </div>
               )}
+            </section>
+
+            <section className="analysis-material-section">
+              <div className="analysis-section-heading analysis-material-heading">
+                <div>
+                  <h2>Revisit the evidence behind this concept</h2>
+                </div>
+              </div>
+
+              <div className="analysis-source-placeholder-grid">
+                {analysisSourcesLoading ? (
+                  <>
+                    <SourceCardSkeleton />
+                    <SourceCardSkeleton />
+                  </>
+                ) : analysisSourcesError ? (
+                  <div className="analysis-source-empty">
+                    {analysisSourcesError}
+                  </div>
+                ) : analysisDocuments.length > 0 ? (
+                  analysisDocuments.map((source, index) => (
+                    <button
+                      type="button"
+                      className="analysis-source-card"
+                      key={source.documentId}
+                      onClick={() => setOpenSource(source)}
+                    >
+                      <SourcePreview source={source} />
+
+                      <div className="analysis-source-card-copy">
+                        <strong>
+                          {formatAnalysisDocumentPages(source.evidenceSources)}
+                          {" · "}
+                          {source.documentName}
+                        </strong>
+
+                        <p>{cleanDisplayEvidence(source.excerpt)}</p>
+
+                        <span className="analysis-source-open">
+                          Open in document
+                          <span aria-hidden="true">↗</span>
+                        </span>
+                      </div>
+                    </button>
+                  ))
+                ) : (
+                  <div className="analysis-source-empty">
+                    No supporting source passage was stored for this attempt.
+                  </div>
+                )}
+              </div>
+            </section>
+
+            {openSource && (
+              <SourceDocumentModal
+                source={openSource}
+                studyPoints={materialStudyPoints}
+                onClose={() => setOpenSource(null)}
+              />
+            )}
+
+            <div className="analysis-dashboard-footer">
+              <div className="analysis-footer-note">
+                <span
+                  className={
+                    analysisFinished
+                      ? "analysis-voice-dot complete"
+                      : "analysis-voice-dot"
+                  }
+                />
+
+                <span>
+                  {analysisFinished
+                    ? "Ready to continue"
+                    : "Ryan is still explaining"}
+                </span>
+              </div>
+
+              <button
+                className="next-button analysis-next-button"
+                disabled={!analysisFinished}
+                onClick={hasNextQuestion ? onNext : onExit}
+              >
+                {hasNextQuestion ? "Next Question" : "Finish Session"}
+
+                <ArrowIcon />
+              </button>
             </div>
           </section>
 
@@ -924,6 +1175,635 @@ function AnalysisScreen({
       </div>
     </main>
   );
+}
+
+type AnalysisDocumentSource = AnalysisSource & {
+  evidenceSources: AnalysisSource[];
+};
+
+function groupAnalysisSourcesByDocument(
+  sources: AnalysisSource[],
+): AnalysisDocumentSource[] {
+  const grouped = new Map<string, AnalysisSource[]>();
+
+  for (const source of sources) {
+    const existing = grouped.get(source.documentId);
+
+    if (existing) {
+      existing.push(source);
+    } else {
+      grouped.set(source.documentId, [source]);
+    }
+  }
+
+  return Array.from(grouped.values()).map((documentSources) => {
+    const ordered = [...documentSources].sort((a, b) => {
+      const pageA = a.pageNumber ?? Number.MAX_SAFE_INTEGER;
+
+      const pageB = b.pageNumber ?? Number.MAX_SAFE_INTEGER;
+
+      if (pageA !== pageB) {
+        return pageA - pageB;
+      }
+
+      return a.unitIndex - b.unitIndex;
+    });
+
+    const first = ordered[0];
+
+    return {
+      ...first,
+
+      pageNumber:
+        ordered.find((source) => source.pageNumber !== null)?.pageNumber ??
+        first.pageNumber,
+
+      excerpt: ordered.map((source) => source.excerpt).join("\n\n"),
+
+      evidenceSources: ordered,
+    };
+  });
+}
+
+function formatAnalysisDocumentPages(sources: AnalysisSource[]): string {
+  const pages = Array.from(
+    new Set(
+      sources
+        .map((source) => source.pageNumber)
+        .filter((page): page is number => typeof page === "number"),
+    ),
+  ).sort((a, b) => a - b);
+
+  if (pages.length === 0) {
+    return "Source material";
+  }
+
+  if (pages.length === 1) {
+    return `Page ${pages[0]}`;
+  }
+
+  if (pages.length <= 3) {
+    return `Pages ${pages.join(", ")}`;
+  }
+
+  return `Pages ${pages[0]}–${pages[pages.length - 1]}`;
+}
+
+function SourcePreview({ source }: { source: AnalysisSource }) {
+  const sourceUrl = buildAnalysisDocumentUrl(source);
+
+  if (source.mimeType === "application/pdf") {
+    return (
+      <div className="analysis-source-preview-real">
+        <iframe
+          src={`${sourceUrl}#page=${
+            source.pageNumber ?? 1
+          }&toolbar=0&navpanes=0`}
+          title={`${source.documentName} preview`}
+          tabIndex={-1}
+        />
+
+        <div className="analysis-source-preview-shade" />
+
+        <span className="analysis-source-page-chip">
+          {source.pageNumber ? `PAGE ${source.pageNumber}` : "PDF"}
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="analysis-source-preview-real analysis-source-generic-preview">
+      <span />
+      <span />
+      <span />
+      <span />
+
+      <div className="analysis-source-page-chip">
+        {source.unitLabel || source.unitKind}
+      </div>
+    </div>
+  );
+}
+
+function SourceCardSkeleton() {
+  return (
+    <div className="analysis-source-card analysis-source-card-loading">
+      <div className="analysis-source-preview">
+        <span />
+        <span />
+        <span />
+        <span />
+      </div>
+
+      <div className="analysis-source-placeholder-copy">
+        <strong>Loading source evidence…</strong>
+
+        <span>Finding the exact material used for this answer.</span>
+      </div>
+    </div>
+  );
+}
+
+function SourceDocumentModal({
+  source,
+  studyPoints,
+  onClose,
+}: {
+  source: AnalysisDocumentSource;
+
+  studyPoints: MaterialStudyPoint[];
+
+  onClose: () => void;
+}) {
+  const sourceUrl = buildAnalysisDocumentUrl(source);
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    }
+
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onClose]);
+
+  return (
+    <div
+      className="analysis-document-modal-backdrop"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose();
+        }
+      }}
+    >
+      <section
+        className="analysis-document-modal analysis-study-document-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Review ${source.documentName}`}
+      >
+        <header className="analysis-document-modal-header">
+          <div>
+            <strong>{source.documentName}</strong>
+
+            <span>
+              {source.pageNumber
+                ? `Page ${source.pageNumber}`
+                : source.unitLabel}
+            </span>
+          </div>
+
+          <button
+            type="button"
+            className="analysis-document-close"
+            onClick={onClose}
+            aria-label="Close source document"
+          >
+            ×
+          </button>
+        </header>
+
+        <div className="analysis-document-modal-body">
+          {source.mimeType === "application/pdf" ? (
+            <StudyPdfViewer
+              fileUrl={sourceUrl}
+              initialPage={source.pageNumber ?? 1}
+              evidenceSources={source.evidenceSources.map((evidence) => ({
+                chunkId: evidence.chunkId,
+                pageNumber: evidence.pageNumber ?? 1,
+                excerpt: evidence.excerpt,
+              }))}
+              studyPoints={studyPoints}
+            />
+          ) : (
+            <div className="analysis-document-unsupported">
+              <p>
+                Inline study review is currently available for PDF material.
+              </p>
+
+              <a href={sourceUrl} target="_blank" rel="noreferrer">
+                Open original document ↗
+              </a>
+            </div>
+          )}
+
+          <aside className="analysis-document-evidence analysis-study-guide">
+            <p className="section-kicker">WHAT TO STUDY HERE</p>
+
+            <h2>Focus on these points</h2>
+
+            <p className="analysis-study-guide-intro">
+              These are the ideas this answer needs you to revisit.
+            </p>
+
+            <div className="analysis-study-guide-list">
+              {studyPoints.length > 0 ? (
+                studyPoints.map((point, index) => (
+                  <article
+                    className={`analysis-study-guide-card analysis-study-guide-color-${
+                      point.colorIndex % 3
+                    }`}
+                    key={point.id}
+                  >
+                    <div className="analysis-study-guide-number">
+                      {String(index + 1).padStart(2, "0")}
+                    </div>
+
+                    <div>
+                      <span>{studyCategoryLabel(point.category)}</span>
+
+                      <strong>{point.title}</strong>
+
+                      <p>{point.explanation}</p>
+                    </div>
+                  </article>
+                ))
+              ) : (
+                <div className="analysis-study-guide-empty">
+                  Review the highlighted evidence on this page.
+                </div>
+              )}
+            </div>
+          </aside>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function buildMaterialStudyPoints({
+  missingPoints,
+  misconceptions,
+  keyPointers,
+  remediationExplanation,
+}: {
+  missingPoints: string[];
+
+  misconceptions: string[];
+
+  keyPointers: string[];
+
+  remediationExplanation: string | null;
+}): MaterialStudyPoint[] {
+  type DraftPoint = {
+    category: MaterialStudyPoint["category"];
+    value: string;
+  };
+
+  const drafts: DraftPoint[] = [];
+
+  const seen = new Set<string>();
+
+  function addDraft(category: MaterialStudyPoint["category"], value: string) {
+    const cleaned = cleanStudyText(value);
+
+    if (!cleaned) {
+      return;
+    }
+
+    const normalized = cleaned.toLowerCase();
+
+    if (seen.has(normalized)) {
+      return;
+    }
+
+    seen.add(normalized);
+
+    drafts.push({
+      category,
+      value: cleaned,
+    });
+  }
+
+  for (const point of missingPoints) {
+    addDraft("MISSED", point);
+  }
+
+  for (const misconception of misconceptions) {
+    addDraft("MISCONCEPTION", misconception);
+  }
+
+  for (const pointer of keyPointers) {
+    addDraft("KEY", pointer);
+  }
+
+  /*
+   * Remediation tends to contain the fuller explanation
+   * behind the short evaluation bullets.
+   *
+   * Keep its sentences available as elaboration material,
+   * rather than showing the same short point twice.
+   */
+  const explanationSentences = splitStudySentences(
+    remediationExplanation ?? "",
+  );
+
+  if (drafts.length < 2 && explanationSentences.length > 0) {
+    for (const sentence of explanationSentences) {
+      addDraft("KEY", sentence);
+
+      if (drafts.length >= 5) {
+        break;
+      }
+    }
+  }
+
+  const allContext = [
+    ...missingPoints,
+    ...misconceptions,
+    ...keyPointers,
+    ...explanationSentences,
+  ]
+    .map(cleanStudyText)
+    .filter(Boolean);
+
+  return drafts.slice(0, 6).map((draft, index) => {
+    const title = makeStudyPointTitle(draft.value, draft.category);
+
+    const explanation = buildStudyPointExplanation({
+      point: draft.value,
+      title,
+      category: draft.category,
+      remediationExplanation,
+      context: allContext,
+    });
+
+    return {
+      id: `${draft.category.toLowerCase()}-${index}`,
+
+      category: draft.category,
+
+      title,
+
+      explanation,
+
+      /*
+       * Keep the original educational point as the
+       * PDF search target. The elaborated UI description
+       * should not affect source matching.
+       */
+      searchText: draft.value,
+
+      colorIndex: index % 3,
+    };
+  });
+}
+
+function buildStudyPointExplanation({
+  point,
+  title,
+  category,
+  remediationExplanation,
+  context,
+}: {
+  point: string;
+
+  title: string;
+
+  category: MaterialStudyPoint["category"];
+
+  remediationExplanation: string | null;
+
+  context: string[];
+}): string {
+  const pointTokens = studyTokens(point);
+
+  const candidates = [
+    ...splitStudySentences(remediationExplanation ?? ""),
+    ...context,
+  ]
+    .map(cleanStudyText)
+    .filter((candidate) => {
+      if (!candidate) {
+        return false;
+      }
+
+      const normalized = candidate.toLowerCase();
+
+      const pointNormalized = point.toLowerCase();
+
+      const titleNormalized = title.toLowerCase();
+
+      /*
+       * Don't repeat the title/point verbatim in the
+       * description box.
+       */
+      return (
+        normalized !== pointNormalized &&
+        normalized !== titleNormalized &&
+        !normalized.startsWith(titleNormalized)
+      );
+    });
+
+  const ranked = candidates
+    .map((candidate) => ({
+      candidate,
+
+      score: studyTokenOverlap(pointTokens, studyTokens(candidate)),
+    }))
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score);
+
+  if (ranked.length > 0) {
+    const best = ranked[0].candidate;
+
+    /*
+     * If the strongest sentence is genuinely more detailed,
+     * use it directly.
+     */
+    if (best.length >= point.length + 12 || best.split(/\s+/).length >= 12) {
+      return best;
+    }
+  }
+
+  /*
+   * Fallback explanations remain generic enough to work
+   * for any uploaded subject, but explain why the learner
+   * should care about the point instead of simply repeating it.
+   */
+  switch (category) {
+    case "MISSED":
+      return `Review how ${lowercaseStudyLead(
+        point,
+      )}. Focus on what it does, where it is used, and why that detail matters to the answer.`;
+
+    case "MISCONCEPTION":
+      return `Revisit this distinction carefully. The important part is understanding the correct relationship behind ${lowercaseStudyLead(
+        point,
+      )}, rather than memorizing the wording alone.`;
+
+    default:
+      return `Understand the idea behind ${lowercaseStudyLead(
+        point,
+      )}. Be able to explain its role and connect it back to the question in your own words.`;
+  }
+}
+
+function splitStudySentences(value: string): string[] {
+  const cleaned = cleanStudyText(value);
+
+  if (!cleaned) {
+    return [];
+  }
+
+  return cleaned
+    .split(/(?<=[.!?])\s+/)
+    .map(cleanStudyText)
+    .filter((sentence) => sentence.length >= 24);
+}
+
+function cleanStudyText(value: string): string {
+  return value
+    .replace(/<sup>(.*?)<\/sup>/gi, " $1 ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/[*_#`~]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function studyTokens(value: string): Set<string> {
+  const stopWords = new Set([
+    "a",
+    "an",
+    "and",
+    "are",
+    "as",
+    "at",
+    "be",
+    "by",
+    "for",
+    "from",
+    "in",
+    "is",
+    "it",
+    "of",
+    "on",
+    "or",
+    "that",
+    "the",
+    "this",
+    "to",
+    "was",
+    "were",
+    "with",
+  ]);
+
+  return new Set(
+    cleanStudyText(value)
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}\s]/gu, " ")
+      .split(/\s+/)
+      .filter((token) => token.length >= 3 && !stopWords.has(token)),
+  );
+}
+
+function studyTokenOverlap(first: Set<string>, second: Set<string>): number {
+  if (first.size === 0 || second.size === 0) {
+    return 0;
+  }
+
+  let common = 0;
+
+  for (const token of first) {
+    if (second.has(token)) {
+      common += 1;
+    }
+  }
+
+  return common / first.size;
+}
+
+function lowercaseStudyLead(value: string): string {
+  const cleaned = cleanStudyText(value)
+    .replace(/[.!?]+$/, "")
+    .trim();
+
+  if (!cleaned) {
+    return "this concept";
+  }
+
+  return cleaned.charAt(0).toLowerCase() + cleaned.slice(1);
+}
+
+function makeStudyPointTitle(
+  value: string,
+  category: MaterialStudyPoint["category"],
+): string {
+  let cleaned = cleanStudyText(value)
+    .replace(/^(remember|understand|review|know|explain)\s+/i, "")
+    .trim();
+
+  /*
+   * Keep the complete educational idea.
+   *
+   * Previously this function deliberately reduced the
+   * title to ~7 words. That is why headings such as
+   * "Fast-SLIC is the specific algorithm used for..."
+   * were being cut off even though the CSS allowed wrapping.
+   */
+  cleaned = cleaned.replace(/[.!?]+$/, "").trim();
+
+  if (!cleaned) {
+    switch (category) {
+      case "MISSED":
+        return "Important missing point";
+
+      case "MISCONCEPTION":
+        return "Concept to clarify";
+
+      default:
+        return "Key idea";
+    }
+  }
+
+  return sentenceCase(cleaned);
+}
+
+function sentenceCase(value: string): string {
+  if (!value) {
+    return value;
+  }
+
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function studyCategoryLabel(category: MaterialStudyPoint["category"]): string {
+  switch (category) {
+    case "MISSED":
+      return "Missing point";
+
+    case "MISCONCEPTION":
+      return "Clarify this";
+
+    default:
+      return "Key idea";
+  }
+}
+
+function cleanDisplayEvidence(value: string) {
+  return value
+    .replace(/<sup>.*?<\/sup>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/[*_#`~]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function buildAnalysisDocumentUrl(source: AnalysisSource) {
+  /*
+   * fileUrl comes from the API as an API-relative URL.
+   *
+   * StudyLoop currently runs the Nest API on port 4000.
+   * When deployment configuration is introduced, this
+   * should move into the shared frontend API-base helper.
+   */
+  return `http://localhost:4000${source.fileUrl}`;
 }
 
 function DiagnosticCard({
