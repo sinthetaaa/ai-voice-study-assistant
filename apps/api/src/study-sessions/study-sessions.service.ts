@@ -21,10 +21,8 @@ import {
   ReviewAnswerCorrectness,
 } from './review-completion-policy';
 import { scheduleConceptReview } from './review-scheduling-policy';
-import {
-  calculateStudyPackCoverage,
-  planNormalStudySession,
-} from './session-planner';
+import { planNormalStudySession } from './session-planner';
+import { calculateStudyPackCoreConceptCoverage } from './study-pack-coverage';
 import {
   calculateNormalSessionQuestionProgress,
   evaluateNormalSessionQuestionLimit,
@@ -873,81 +871,365 @@ export class StudySessionsService {
   }
 
   async getStudyPackCoverage(studyPackId: string) {
-    const concepts = await this.prisma.concept.findMany({
+    /*
+     * Study Pack coverage is learner-facing.
+     *
+     * Atomic Concepts remain the internal retrieval,
+     * question-generation, and mastery units.
+     *
+     * Core Concepts are the learner-facing coverage
+     * denominator.
+     */
+    const studyPack = await this.prisma.studyPack.findUnique({
       where: {
-        studyPackId,
+        id: studyPackId,
+      },
 
-        sources: {
-          some: {
-            chunk: {
-              unit: {
-                document: {
-                  status: 'READY',
+      select: {
+        id: true,
+
+        hierarchyStatus: true,
+        hierarchyRevision: true,
+        hierarchyGeneratedRevision: true,
+
+        topics: {
+          orderBy: [
+            {
+              position: 'asc',
+            },
+            {
+              createdAt: 'asc',
+            },
+            {
+              id: 'asc',
+            },
+          ],
+
+          select: {
+            id: true,
+            name: true,
+            description: true,
+            position: true,
+
+            coreConcepts: {
+              orderBy: [
+                {
+                  position: 'asc',
+                },
+                {
+                  createdAt: 'asc',
+                },
+                {
+                  id: 'asc',
+                },
+              ],
+
+              select: {
+                id: true,
+                name: true,
+                description: true,
+                importance: true,
+                position: true,
+
+                /*
+                 * Only Atomic Concepts with current READY
+                 * source provenance belong to the active
+                 * learner-facing hierarchy.
+                 */
+                atomicConcepts: {
+                  where: {
+                    sources: {
+                      some: {
+                        chunk: {
+                          unit: {
+                            document: {
+                              status: 'READY',
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+
+                  orderBy: [
+                    {
+                      positionInCore: 'asc',
+                    },
+                    {
+                      createdAt: 'asc',
+                    },
+                    {
+                      id: 'asc',
+                    },
+                  ],
+
+                  select: {
+                    id: true,
+                    name: true,
+                    importance: true,
+                    difficulty: true,
+                    positionInCore: true,
+                  },
                 },
               },
             },
           },
         },
       },
-
-      select: {
-        id: true,
-
-        importance: true,
-      },
     });
 
-    const attempts = await this.prisma.questionAttempt.findMany({
-      where: {
-        studySession: {
-          studyPackId,
+    if (!studyPack) {
+      throw new NotFoundException(`Study Pack ${studyPackId} was not found`);
+    }
 
-          kind: 'NORMAL',
-        },
+    /*
+     * A persisted hierarchy is authoritative only when it
+     * represents exactly the current atomic-concept revision.
+     *
+     * DIRTY / GENERATING / FAILED hierarchy rows may still
+     * physically exist in the database, but must never be
+     * surfaced as current learner structure.
+     */
+    const hierarchyAuthoritative =
+      studyPack.hierarchyStatus === 'READY' &&
+      studyPack.hierarchyGeneratedRevision === studyPack.hierarchyRevision;
 
-        question: {
-          concept: {
-            studyPackId,
-          },
-        },
-      },
+    const hierarchy = {
+      status: studyPack.hierarchyStatus,
+      revision: studyPack.hierarchyRevision,
+      generatedRevision: studyPack.hierarchyGeneratedRevision,
+      authoritative: hierarchyAuthoritative,
+    };
 
-      select: {
-        question: {
-          select: {
-            conceptId: true,
-          },
-        },
-      },
-    });
+    if (!hierarchyAuthoritative) {
+      return {
+        studyPackId,
 
-    const attemptCountByConcept = new Map<string, number>();
+        hierarchy,
+
+        totalCoreConceptCount: 0,
+        coveredCoreConceptCount: 0,
+        inProgressCoreConceptCount: 0,
+        untouchedCoreConceptCount: 0,
+
+        totalAtomicConceptCount: 0,
+        testedAtomicConceptCount: 0,
+        untestedAtomicConceptCount: 0,
+
+        ratio: 0,
+        weightedRatio: 0,
+        percentage: 0,
+
+        topics: [],
+
+        /*
+         * Temporary compatibility aliases for the
+         * current web client.
+         *
+         * These now describe CORE concepts rather than
+         * Atomic Concepts and will be removed after the
+         * frontend migrates to the explicit V2 fields.
+         */
+        totalConceptCount: 0,
+        testedConceptCount: 0,
+        untestedConceptCount: 0,
+        conceptRatio: 0,
+      };
+    }
+
+    const activeCoreConcepts = studyPack.topics.flatMap((topic) =>
+      topic.coreConcepts.filter(
+        (coreConcept) => coreConcept.atomicConcepts.length > 0,
+      ),
+    );
+
+    const atomicConceptIds = activeCoreConcepts.flatMap((coreConcept) =>
+      coreConcept.atomicConcepts.map((atomicConcept) => atomicConcept.id),
+    );
+
+    /*
+     * Coverage advances only from evaluated learner
+     * evidence produced inside NORMAL Study Sessions.
+     *
+     * Creating a QuestionAttempt alone is not sufficient.
+     * REVIEW sessions also do not expand content coverage.
+     */
+    const attempts =
+      atomicConceptIds.length === 0
+        ? []
+        : await this.prisma.questionAttempt.findMany({
+            where: {
+              studySession: {
+                studyPackId,
+                kind: 'NORMAL',
+              },
+
+              evaluation: {
+                isNot: null,
+              },
+
+              question: {
+                conceptId: {
+                  in: atomicConceptIds,
+                },
+
+                concept: {
+                  studyPackId,
+                },
+              },
+            },
+
+            select: {
+              question: {
+                select: {
+                  conceptId: true,
+                },
+              },
+            },
+          });
+
+    const evaluatedNormalAttemptCountByConcept = new Map<string, number>();
 
     for (const attempt of attempts) {
       const conceptId = attempt.question.conceptId;
 
-      attemptCountByConcept.set(
+      evaluatedNormalAttemptCountByConcept.set(
         conceptId,
-        (attemptCountByConcept.get(conceptId) ?? 0) + 1,
+        (evaluatedNormalAttemptCountByConcept.get(conceptId) ?? 0) + 1,
       );
     }
 
-    const coverage = calculateStudyPackCoverage(
-      concepts.map((concept) => ({
-        id: concept.id,
+    const coverage = calculateStudyPackCoreConceptCoverage(
+      activeCoreConcepts.map((coreConcept) => ({
+        id: coreConcept.id,
+        importance: coreConcept.importance,
 
-        importance: concept.importance,
+        atomicConcepts: coreConcept.atomicConcepts.map((atomicConcept) => ({
+          id: atomicConcept.id,
 
-        priorAttemptCount: attemptCountByConcept.get(concept.id) ?? 0,
+          evaluatedNormalAttemptCount:
+            evaluatedNormalAttemptCountByConcept.get(atomicConcept.id) ?? 0,
+        })),
       })),
     );
+
+    const coverageByCoreConceptId = new Map(
+      coverage.coreConcepts.map((coreConcept) => [coreConcept.id, coreConcept]),
+    );
+
+    const topics = studyPack.topics
+      .map((topic) => {
+        const coreConcepts = topic.coreConcepts
+          .filter((coreConcept) => coreConcept.atomicConcepts.length > 0)
+          .map((coreConcept) => {
+            const coreCoverage = coverageByCoreConceptId.get(coreConcept.id);
+
+            if (!coreCoverage) {
+              throw new InternalServerErrorException(
+                `Coverage snapshot missing for Core Concept ${coreConcept.id}`,
+              );
+            }
+
+            return {
+              id: coreConcept.id,
+              name: coreConcept.name,
+              description: coreConcept.description,
+              importance: coreConcept.importance,
+              position: coreConcept.position,
+
+              coverage: {
+                state: coreCoverage.state,
+                ratio: coreCoverage.ratio,
+
+                atomicConceptCount: coreCoverage.atomicConceptCount,
+
+                testedAtomicConceptCount: coreCoverage.testedAtomicConceptCount,
+
+                untestedAtomicConceptCount:
+                  coreCoverage.untestedAtomicConceptCount,
+              },
+
+              atomicConcepts: coreConcept.atomicConcepts.map(
+                (atomicConcept) => {
+                  const evaluatedNormalAttemptCount =
+                    evaluatedNormalAttemptCountByConcept.get(
+                      atomicConcept.id,
+                    ) ?? 0;
+
+                  return {
+                    id: atomicConcept.id,
+                    name: atomicConcept.name,
+                    importance: atomicConcept.importance,
+                    difficulty: atomicConcept.difficulty,
+                    position: atomicConcept.positionInCore,
+
+                    tested: evaluatedNormalAttemptCount > 0,
+
+                    evaluatedNormalAttemptCount,
+                  };
+                },
+              ),
+            };
+          });
+
+        return {
+          id: topic.id,
+          name: topic.name,
+          description: topic.description,
+          position: topic.position,
+          coreConcepts,
+        };
+      })
+      .filter((topic) => topic.coreConcepts.length > 0);
+
+    /*
+     * Legacy "testedConceptCount" keeps its historical
+     * exposure meaning:
+     *
+     * a Core Concept counts as tested once at least one
+     * Atomic Concept underneath it has evaluated NORMAL
+     * exposure.
+     */
+    const testedCoreConceptCount =
+      coverage.coveredCoreConceptCount + coverage.inProgressCoreConceptCount;
 
     return {
       studyPackId,
 
-      ...coverage,
+      hierarchy,
+
+      totalCoreConceptCount: coverage.totalCoreConceptCount,
+
+      coveredCoreConceptCount: coverage.coveredCoreConceptCount,
+
+      inProgressCoreConceptCount: coverage.inProgressCoreConceptCount,
+
+      untouchedCoreConceptCount: coverage.untouchedCoreConceptCount,
+
+      totalAtomicConceptCount: coverage.totalAtomicConceptCount,
+
+      testedAtomicConceptCount: coverage.testedAtomicConceptCount,
+
+      untestedAtomicConceptCount: coverage.untestedAtomicConceptCount,
+
+      ratio: coverage.ratio,
+
+      weightedRatio: coverage.weightedRatio,
 
       percentage: Math.round(coverage.weightedRatio * 100),
+
+      topics,
+
+      /*
+       * Temporary web compatibility aliases.
+       */
+      totalConceptCount: coverage.totalCoreConceptCount,
+
+      testedConceptCount: testedCoreConceptCount,
+
+      untestedConceptCount: coverage.untouchedCoreConceptCount,
+
+      conceptRatio: coverage.ratio,
     };
   }
 
