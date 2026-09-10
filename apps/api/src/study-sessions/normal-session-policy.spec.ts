@@ -67,3 +67,60 @@ describe('normal session policy', () => {
     );
   });
 });
+
+describe('normal session question progress', () => {
+  const {
+    calculateNormalSessionQuestionProgress,
+  } = require('./normal-session-policy');
+
+  it('uses fifteen as the baseline target for five concepts', () => {
+    expect(
+      calculateNormalSessionQuestionProgress(11, 5),
+    ).toEqual({
+      answeredQuestionCount: 11,
+      targetQuestionCount: 15,
+      maximumQuestionCount: 20,
+      remainingToTarget: 4,
+      remainingToMaximum: 9,
+      targetReached: false,
+      maximumReached: false,
+    });
+  });
+
+  it('uses a smaller natural target for a tiny Study Pack', () => {
+    const progress =
+      calculateNormalSessionQuestionProgress(4, 2);
+
+    expect(progress.targetQuestionCount).toBe(6);
+    expect(progress.remainingToTarget).toBe(2);
+    expect(progress.maximumQuestionCount).toBe(20);
+  });
+
+  it('reports the target as reached without treating it as the hard cap', () => {
+    const progress =
+      calculateNormalSessionQuestionProgress(15, 5);
+
+    expect(progress.targetReached).toBe(true);
+    expect(progress.maximumReached).toBe(false);
+    expect(progress.remainingToTarget).toBe(0);
+    expect(progress.remainingToMaximum).toBe(5);
+  });
+
+  it('reports the hard maximum as reached at twenty', () => {
+    const progress =
+      calculateNormalSessionQuestionProgress(20, 5);
+
+    expect(progress.targetReached).toBe(true);
+    expect(progress.maximumReached).toBe(true);
+    expect(progress.remainingToTarget).toBe(0);
+    expect(progress.remainingToMaximum).toBe(0);
+  });
+
+  it('rejects invalid planned concept counts', () => {
+    expect(() =>
+      calculateNormalSessionQuestionProgress(1, -1),
+    ).toThrow(
+      'plannedConceptCount must be a non-negative integer',
+    );
+  });
+});

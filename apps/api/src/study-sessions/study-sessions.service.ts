@@ -26,6 +26,7 @@ import {
   planNormalStudySession,
 } from './session-planner';
 import {
+  calculateNormalSessionQuestionProgress,
   evaluateNormalSessionQuestionLimit,
 } from './normal-session-policy';
 
@@ -133,6 +134,20 @@ export type StudySessionStateResult = {
     reviewRequiredCount: number;
 
     remainingConceptCount: number;
+
+    answeredQuestionCount: number;
+
+    targetQuestionCount: number;
+
+    maximumQuestionCount: number;
+
+    remainingToTarget: number;
+
+    remainingToMaximum: number;
+
+    targetReached: boolean;
+
+    maximumReached: boolean;
   };
 
   currentConcept: StudySessionCurrentConcept | null;
@@ -1421,6 +1436,12 @@ export class StudySessionsService {
           },
         },
 
+        _count: {
+          select: {
+            attempts: true,
+          },
+        },
+
         conceptProgress: {
           orderBy: {
             position: 'asc',
@@ -1514,6 +1535,14 @@ export class StudySessionsService {
       (progress) =>
         progress.status === 'PENDING' || progress.status === 'IN_PROGRESS',
     ).length;
+
+    const questionProgress =
+      session.kind === 'NORMAL'
+        ? calculateNormalSessionQuestionProgress(
+            session._count.attempts,
+            session.conceptProgress.length,
+          )
+        : null;
 
     const currentProgress = session.currentConceptId
       ? session.conceptProgress.find(
@@ -1613,6 +1642,32 @@ export class StudySessionsService {
         reviewRequiredCount,
 
         remainingConceptCount,
+
+        answeredQuestionCount:
+          questionProgress?.answeredQuestionCount ??
+          session._count.attempts,
+
+        targetQuestionCount:
+          questionProgress?.targetQuestionCount ?? 1,
+
+        maximumQuestionCount:
+          questionProgress?.maximumQuestionCount ?? 1,
+
+        remainingToTarget:
+          questionProgress?.remainingToTarget ??
+          Math.max(0, 1 - session._count.attempts),
+
+        remainingToMaximum:
+          questionProgress?.remainingToMaximum ??
+          Math.max(0, 1 - session._count.attempts),
+
+        targetReached:
+          questionProgress?.targetReached ??
+          session._count.attempts >= 1,
+
+        maximumReached:
+          questionProgress?.maximumReached ??
+          session._count.attempts >= 1,
       },
 
       currentConcept,
