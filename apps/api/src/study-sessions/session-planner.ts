@@ -1,3 +1,7 @@
+import {
+  NORMAL_SESSION_TARGET_CONCEPT_COUNT,
+} from './normal-session-policy';
+
 export type SessionPlannerDifficulty =
   'FOUNDATIONAL' | 'INTERMEDIATE' | 'ADVANCED';
 
@@ -46,15 +50,22 @@ export function getNormalSessionConceptLimit(
     throw new Error('Invalid active concept count');
   }
 
-  if (totalActiveConcepts <= 3) {
-    return totalActiveConcepts;
-  }
-
-  if (totalActiveConcepts <= 12) {
-    return 3;
-  }
-
-  return 4;
+  /*
+   * Normal Study V2 targets five concepts per sitting.
+   *
+   * Five concepts ×
+   * RECALL → UNDERSTANDING → APPLICATION
+   *
+   * gives a 15-question baseline.
+   *
+   * Smaller Study Packs simply use every available concept.
+   * We do not manufacture filler concepts just to reach 15
+   * questions.
+   */
+  return Math.min(
+    totalActiveConcepts,
+    NORMAL_SESSION_TARGET_CONCEPT_COUNT,
+  );
 }
 
 export function planNormalStudySession(
