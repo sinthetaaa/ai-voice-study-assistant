@@ -25,6 +25,9 @@ import {
   calculateStudyPackCoverage,
   planNormalStudySession,
 } from './session-planner';
+import {
+  evaluateNormalSessionQuestionLimit,
+} from './normal-session-policy';
 
 import {
   INITIAL_SESSION_ALPHA,
@@ -1243,6 +1246,61 @@ export class StudySessionsService {
       evaluation.score,
     );
 
+    /*
+     * NORMAL SESSION HARD STOP
+     *
+     * Count session-local mastery events rather than raw
+     * QuestionAttempt rows.
+     *
+     * Each successfully evaluated NORMAL-session answer can
+     * produce at most one SessionMasteryEvent because
+     * evaluationId is unique.
+     *
+     * This therefore represents the number of successfully
+     * evaluated answers in this sitting.
+     */
+    const answeredQuestionCount =
+      await this.prisma.sessionMasteryEvent.count({
+        where: {
+          sessionId: session.id,
+        },
+      });
+
+    const questionLimit =
+      evaluateNormalSessionQuestionLimit(answeredQuestionCount);
+
+    /*
+     * IMPORTANT:
+     *
+     * This check MUST happen before LearningLoopService.
+     *
+     * LearningLoop may generate:
+     *
+     * - ALTERNATE questions
+     * - SCAFFOLD questions
+     *
+     * and recovery may later generate RETEST questions.
+     *
+     * Once Question 20 has been evaluated, none of those
+     * expensive operations should run.
+     */
+    if (questionLimit.reachedLimit) {
+      await this.completeNormalSessionAtQuestionLimit(
+        session.id,
+        conceptId,
+        evaluation.questionType,
+      );
+
+      const updatedSession = await this.getSessionState(session.id);
+
+      return {
+        evaluation,
+        learningStep: null,
+        reviewStep: null,
+        session: updatedSession,
+      };
+    }
+
     let learningStep: LearningLoopNextStepResult;
 
     try {
@@ -1718,6 +1776,148 @@ export class StudySessionsService {
 
         ...event,
       };
+    });
+  }
+
+  private async completeNormalSessionAtQuestionLimit(
+    sessionId: string,
+    conceptId: string,
+    reviewQuestionType: 'RECALL' | 'UNDERSTANDING' | 'APPLICATION',
+  ): Promise<void> {
+    const now = new Date();
+
+    /*
+     * Reaching the hard question budget ends this learner
+     * sitting even if the current adaptive concept ladder
+     * has not naturally completed.
+     *
+     * Only the CURRENT unfinished concept is marked as
+     * requiring review.
+     *
+     * Concepts that were never reached remain PENDING and
+     * are not treated as failures.
+     */
+    await this.prisma.$transaction(async (transaction) => {
+      const progress =
+        await transaction.sessionConceptProgress.findUnique({
+          where: {
+            sessionId_conceptId: {
+              sessionId,
+              conceptId,
+            },
+          },
+
+          select: {
+            status: true,
+            recoveryTargetQuestionType: true,
+          },
+        });
+
+      if (!progress) {
+        throw new InternalServerErrorException(
+          `StudySession ${sessionId} has no ` +
+            `SessionConceptProgress for concept ${conceptId}`,
+        );
+      }
+
+      /*
+       * If the session ends while the learner is working through
+       * an easier recovery scaffold, preserve the ORIGINAL level
+       * that still needs to be verified.
+       *
+       * Example:
+       *
+       * failed APPLICATION
+       * -> scaffold UNDERSTANDING
+       * -> Question 20 reached
+       *
+       * The future review should return to APPLICATION rather
+       * than permanently lowering the target to UNDERSTANDING.
+       */
+      const effectiveReviewQuestionType =
+        progress.recoveryTargetQuestionType ?? reviewQuestionType;
+
+      const reviewSchedule = scheduleConceptReview({
+        action: 'ADVANCE_WITH_REVIEW',
+        completedAt: now,
+        reviewQuestionType: effectiveReviewQuestionType,
+      });
+
+      await transaction.sessionConceptProgress.update({
+        where: {
+          sessionId_conceptId: {
+            sessionId,
+            conceptId,
+          },
+        },
+
+        data: {
+          status: 'REVIEW_REQUIRED',
+          reviewRequired: true,
+          recoveryTargetQuestionType: null,
+          recoveryOriginQuestionId: null,
+          completedAt: now,
+        },
+      });
+
+      /*
+       * Lifetime mastery has already been updated by the
+       * evaluation pipeline for Question 20.
+       */
+      const mastery =
+        await transaction.conceptMastery.findUnique({
+          where: {
+            conceptId,
+          },
+
+          select: {
+            id: true,
+          },
+        });
+
+      if (!mastery) {
+        throw new InternalServerErrorException(
+          `Concept ${conceptId} reached the normal-session ` +
+            'question limit without persisted mastery state',
+        );
+      }
+
+      /*
+       * Carry the unfinished concept into the review system
+       * instead of generating Question 21.
+       */
+      await transaction.conceptMastery.update({
+        where: {
+          conceptId,
+        },
+
+        data: {
+          reviewDueAt: reviewSchedule.reviewDueAt,
+          reviewQuestionType:
+            reviewSchedule.reviewQuestionType,
+          reviewIntervalDays:
+            reviewSchedule.reviewIntervalDays,
+        },
+      });
+
+      /*
+       * Hard session boundary.
+       *
+       * Clearing both pointers guarantees that refreshing the
+       * browser cannot accidentally continue this session.
+       */
+      await transaction.studySession.update({
+        where: {
+          id: sessionId,
+        },
+
+        data: {
+          status: 'COMPLETED',
+          currentConceptId: null,
+          currentQuestionId: null,
+          completedAt: now,
+        },
+      });
     });
   }
 
