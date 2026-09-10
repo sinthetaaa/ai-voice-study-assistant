@@ -244,3 +244,249 @@ class ConceptCurationResult(BaseModel):
                 if value.strip()
             )
         )
+
+
+class AtomicConceptHierarchyInput(BaseModel):
+    id: str = Field(
+        min_length=1,
+        max_length=200,
+    )
+
+    name: str = Field(
+        min_length=2,
+        max_length=120,
+    )
+
+    description: str = Field(
+        min_length=10,
+        max_length=800,
+    )
+
+    importance: int = Field(
+        ge=1,
+        le=5,
+    )
+
+    difficulty: ConceptDifficulty
+
+    @field_validator("id")
+    @classmethod
+    def clean_id(
+        cls,
+        value: str,
+    ) -> str:
+        cleaned = value.strip()
+
+        if not cleaned:
+            raise ValueError(
+                "Atomic concept ID cannot be empty",
+            )
+
+        return cleaned
+
+    @field_validator("name")
+    @classmethod
+    def clean_atomic_name(
+        cls,
+        value: str,
+    ) -> str:
+        cleaned = (
+            value
+            .strip()
+            .rstrip(".:;,")
+        )
+
+        if len(cleaned) < 2:
+            raise ValueError(
+                "Atomic concept name cannot be empty",
+            )
+
+        return cleaned
+
+    @field_validator("description")
+    @classmethod
+    def clean_atomic_description(
+        cls,
+        value: str,
+    ) -> str:
+        cleaned = value.strip()
+
+        if len(cleaned) < 10:
+            raise ValueError(
+                "Atomic concept description is too short",
+            )
+
+        return cleaned
+
+
+class ConceptHierarchyRequest(BaseModel):
+    concepts: list[
+        AtomicConceptHierarchyInput
+    ] = Field(
+        min_length=1,
+        max_length=100,
+    )
+
+    @field_validator("concepts")
+    @classmethod
+    def require_unique_atomic_ids(
+        cls,
+        concepts: list[
+            AtomicConceptHierarchyInput
+        ],
+    ) -> list[
+        AtomicConceptHierarchyInput
+    ]:
+        ids = [
+            concept.id
+            for concept in concepts
+        ]
+
+        if len(ids) != len(set(ids)):
+            raise ValueError(
+                "Atomic concept IDs must be unique",
+            )
+
+        return concepts
+
+
+class CoreConceptPlan(BaseModel):
+    name: str = Field(
+        min_length=2,
+        max_length=120,
+    )
+
+    description: str = Field(
+        min_length=10,
+        max_length=600,
+    )
+
+    importance: int = Field(
+        ge=1,
+        le=5,
+    )
+
+    atomic_concept_ids: list[str] = Field(
+        min_length=1,
+        max_length=100,
+    )
+
+    @field_validator("name")
+    @classmethod
+    def clean_core_name(
+        cls,
+        value: str,
+    ) -> str:
+        cleaned = (
+            value
+            .strip()
+            .rstrip(".:;,")
+        )
+
+        if len(cleaned) < 2:
+            raise ValueError(
+                "Core Concept name cannot be empty",
+            )
+
+        return cleaned
+
+    @field_validator("description")
+    @classmethod
+    def clean_core_description(
+        cls,
+        value: str,
+    ) -> str:
+        cleaned = value.strip()
+
+        if len(cleaned) < 10:
+            raise ValueError(
+                "Core Concept description is too short",
+            )
+
+        return cleaned
+
+    @field_validator("atomic_concept_ids")
+    @classmethod
+    def clean_atomic_concept_ids(
+        cls,
+        values: list[str],
+    ) -> list[str]:
+        cleaned = [
+            value.strip()
+            for value in values
+        ]
+
+        if any(
+            not value
+            for value in cleaned
+        ):
+            raise ValueError(
+                "Atomic concept IDs cannot be empty",
+            )
+
+        # Do NOT deduplicate here.
+        #
+        # Duplicate membership represents an invalid
+        # hierarchy and must remain visible to the
+        # deterministic hierarchy-service validation.
+        return cleaned
+
+
+class StudyTopicPlan(BaseModel):
+    name: str = Field(
+        min_length=2,
+        max_length=120,
+    )
+
+    description: str | None = Field(
+        default=None,
+        max_length=600,
+    )
+
+    core_concepts: list[
+        CoreConceptPlan
+    ] = Field(
+        min_length=1,
+        max_length=50,
+    )
+
+    @field_validator("name")
+    @classmethod
+    def clean_topic_name(
+        cls,
+        value: str,
+    ) -> str:
+        cleaned = (
+            value
+            .strip()
+            .rstrip(".:;,")
+        )
+
+        if len(cleaned) < 2:
+            raise ValueError(
+                "Study Topic name cannot be empty",
+            )
+
+        return cleaned
+
+    @field_validator("description")
+    @classmethod
+    def clean_topic_description(
+        cls,
+        value: str | None,
+    ) -> str | None:
+        if value is None:
+            return None
+
+        cleaned = value.strip()
+
+        return cleaned or None
+
+
+class ConceptHierarchyResult(BaseModel):
+    topics: list[
+        StudyTopicPlan
+    ] = Field(
+        min_length=1,
+        max_length=50,
+    )
