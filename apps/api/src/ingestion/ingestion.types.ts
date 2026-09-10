@@ -2,6 +2,13 @@ export type ProcessDocumentJobData = {
   documentId: string;
 };
 
+export type GenerateStudyPackHierarchyJobData = {
+  studyPackId: string;
+};
+
+export type IngestionJobData =
+  ProcessDocumentJobData | GenerateStudyPackHierarchyJobData;
+
 export type JsonPrimitive = string | number | boolean | null;
 
 export type JsonValue = JsonPrimitive | JsonObject | JsonValue[];

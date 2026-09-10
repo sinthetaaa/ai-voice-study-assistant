@@ -8,13 +8,17 @@ import { LocalStorageService } from '../storage/local-storage.service';
 import { ChunkingService } from '../chunking/chunking.service';
 import { EmbeddingClientService } from '../embeddings/embedding-client.service';
 import { ConceptsService } from '../concepts/concepts.service';
+import { IngestionQueueService } from './ingestion-queue.service';
 
 import {
   DOCUMENT_INGESTION_QUEUE,
+  GENERATE_STUDY_PACK_HIERARCHY_JOB,
   PROCESS_DOCUMENT_JOB,
 } from './ingestion.constants';
 
 import {
+  GenerateStudyPackHierarchyJobData,
+  IngestionJobData,
   ParsedDocumentResponse,
   ProcessDocumentJobData,
 } from './ingestion.types';
@@ -36,27 +40,36 @@ export class IngestionProcessor extends WorkerHost {
     private readonly embeddingClient: EmbeddingClientService,
 
     private readonly conceptsService: ConceptsService,
+    private readonly ingestionQueueService: IngestionQueueService,
   ) {
     super();
   }
 
-  async process(job: Job<ProcessDocumentJobData>): Promise<void> {
+  async process(job: Job<IngestionJobData>): Promise<void> {
+    if (job.name === GENERATE_STUDY_PACK_HIERARCHY_JOB) {
+      const hierarchyJob = job.data as GenerateStudyPackHierarchyJobData;
+
+      await this.conceptsService.tryGenerateStudyPackHierarchy(
+        hierarchyJob.studyPackId,
+      );
+
+      return;
+    }
+
     if (job.name !== PROCESS_DOCUMENT_JOB) {
       throw new Error(`Unsupported ingestion job: ${job.name}`);
     }
 
+    const documentJob = job.data as ProcessDocumentJobData;
+
     const document = await this.prisma.document.findUnique({
       where: {
-        id: job.data.documentId,
+        id: documentJob.documentId,
       },
     });
 
     if (!document) {
-      throw new Error(`Document ${job.data.documentId} was not found`);
-    }
-
-    if (!document.storageKey) {
-      throw new Error(`Document ${document.id} has no storage key`);
+      throw new Error(`Document ${documentJob.documentId} was not found`);
     }
 
     this.logger.log(`Processing ${document.originalName} (${document.id})`);
@@ -69,10 +82,17 @@ export class IngestionProcessor extends WorkerHost {
       data: {
         status: 'PROCESSING',
         errorMessage: null,
+        conceptStatus: 'PENDING',
+        conceptErrorMessage: null,
       },
     });
 
+    let documentContentReady = false;
+
     try {
+      if (!document.storageKey) {
+        throw new Error(`Document ${document.id} has no storage key`);
+      }
       /*
        * ------------------------------------------------
        * 1. Read uploaded file
@@ -299,6 +319,8 @@ export class IngestionProcessor extends WorkerHost {
         },
       });
 
+      documentContentReady = true;
+
       this.logger.log(
         `Finished ${document.originalName}: ${parsed.units.length} units, ${chunkCount} chunks, ${embeddingResult.embeddings.length} embeddings`,
       );
@@ -323,6 +345,16 @@ export class IngestionProcessor extends WorkerHost {
        * concept provenance.
        */
 
+      await this.prisma.document.update({
+        where: {
+          id: document.id,
+        },
+        data: {
+          conceptStatus: 'PROCESSING',
+          conceptErrorMessage: null,
+        },
+      });
+
       this.logger.log(
         `Generating concepts for ${document.originalName} (${document.id})`,
       );
@@ -333,11 +365,23 @@ export class IngestionProcessor extends WorkerHost {
           document.id,
         );
 
+      await this.prisma.document.update({
+        where: {
+          id: document.id,
+        },
+        data: {
+          conceptStatus: 'READY',
+          conceptErrorMessage: null,
+        },
+      });
+
       this.logger.log(
         `Concept generation finished for ${document.originalName}: ` +
           `${conceptResult.conceptCount} extracted, ` +
           `${conceptResult.persistedConceptCount} active concepts`,
       );
+
+      await this.enqueueHierarchyGenerationSafely(document.studyPackId);
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Unknown ingestion error';
@@ -354,15 +398,45 @@ export class IngestionProcessor extends WorkerHost {
             id: document.id,
           },
 
-          data: {
-            status: 'FAILED',
-            errorMessage: message,
-          },
+          data: documentContentReady
+            ? {
+                /*
+                 * File parsing/chunking/embedding succeeded.
+                 * Only concept processing failed.
+                 */
+                status: 'READY',
+                errorMessage: null,
+                conceptStatus: 'FAILED',
+                conceptErrorMessage: message,
+              }
+            : {
+                /*
+                 * Material ingestion itself failed.
+                 */
+                status: 'FAILED',
+                errorMessage: message,
+                conceptStatus: 'FAILED',
+                conceptErrorMessage: message,
+              },
         });
 
-        this.logger.error(
-          `Ingestion permanently failed for ${document.originalName}: ${message}`,
-        );
+        if (documentContentReady) {
+          this.logger.error(
+            `Concept processing permanently failed for ${document.originalName}: ${message}`,
+          );
+        } else {
+          this.logger.error(
+            `Ingestion permanently failed for ${document.originalName}: ${message}`,
+          );
+        }
+
+        /*
+         * FAILED is a settled concept state.
+         *
+         * This may be the last document preventing the
+         * Study Pack hierarchy from being generated.
+         */
+        await this.enqueueHierarchyGenerationSafely(document.studyPackId);
       } else {
         this.logger.warn(
           `Ingestion attempt ${currentAttempt}/${totalAttempts} failed for ${document.originalName}: ${message}`,
@@ -370,6 +444,29 @@ export class IngestionProcessor extends WorkerHost {
       }
 
       throw error;
+    }
+  }
+
+  private async enqueueHierarchyGenerationSafely(
+    studyPackId: string,
+  ): Promise<void> {
+    try {
+      await this.ingestionQueueService.enqueueStudyPackHierarchy(studyPackId);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+
+      /*
+       * Queue scheduling failure must not cause the
+       * expensive document pipeline to run again.
+       *
+       * The hierarchy remains DIRTY/FAILED and can be
+       * retried by another settlement event or through
+       * the explicit hierarchy endpoint.
+       */
+      this.logger.error(
+        `Could not enqueue hierarchy generation for ` +
+          `Study Pack ${studyPackId}: ${message}`,
+      );
     }
   }
 
