@@ -20,8 +20,14 @@ model StudyPack {
 
   topics       StudyTopic[]
   coreConcepts CoreConcept[]
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
+
+  hierarchyStatus            StudyPackHierarchyStatus @default(DIRTY)
+  hierarchyRevision          Int                      @default(0)
+  hierarchyGeneratedRevision Int?
+  hierarchyErrorMessage      String?
+  hierarchyUpdatedAt         DateTime?
+  createdAt                  DateTime                 @default(now())
+  updatedAt                  DateTime                 @updatedAt
 }
 
 model Document {
@@ -40,6 +46,9 @@ model Document {
 
   errorMessage String?
 
+  conceptStatus       DocumentConceptStatus @default(PENDING)
+  conceptErrorMessage String?
+
   parser         String?
   parsedMetadata Json?
 
@@ -50,6 +59,7 @@ model Document {
 
   @@index([studyPackId])
   @@index([status])
+  @@index([studyPackId, conceptStatus])
 }
 
 model DocumentUnit {
@@ -617,6 +627,20 @@ model SessionConceptProgress {
 enum DocumentStatus {
   UPLOADED
   PROCESSING
+  READY
+  FAILED
+}
+
+enum DocumentConceptStatus {
+  PENDING
+  PROCESSING
+  READY
+  FAILED
+}
+
+enum StudyPackHierarchyStatus {
+  DIRTY
+  GENERATING
   READY
   FAILED
 }
