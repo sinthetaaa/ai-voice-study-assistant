@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+import { useRef, type CSSProperties } from "react";
 
 import type { ConceptGraph } from "../lib/studyloop-api";
 
@@ -158,14 +158,38 @@ function ConceptGraphPopover({
 
   sessionConceptIds: string[];
 }) {
-  const flowNodes = buildConceptFlowNodes(
-    graph,
-    currentConceptId,
-    sessionConceptIds,
-  );
+  const flowNodes = buildConceptFlowNodes(graph);
+
+  const flowShellRef = useRef<HTMLSpanElement | null>(null);
+  const currentConceptRef = useRef<HTMLSpanElement | null>(null);
+
+  const centerCurrentConcept = () => {
+    requestAnimationFrame(() => {
+      const shell = flowShellRef.current;
+      const current = currentConceptRef.current;
+
+      if (!shell || !current) {
+        return;
+      }
+
+      const targetTop =
+        current.offsetTop -
+        shell.clientHeight / 2 +
+        current.clientHeight / 2;
+
+      shell.scrollTo({
+        top: Math.max(0, targetTop),
+        behavior: "auto",
+      });
+    });
+  };
 
   return (
-    <span className="concept-flow-hover-trigger">
+    <span
+      className="concept-flow-hover-trigger"
+      onMouseEnter={centerCurrentConcept}
+      onFocusCapture={centerCurrentConcept}
+    >
       <button
         type="button"
         className="final-info-button concept-flow-hover-button"
@@ -184,12 +208,11 @@ function ConceptGraphPopover({
             Concept flow is not available yet.
           </span>
         ) : (
-          <span className="concept-path-shell">
+          <span className="concept-path-shell" ref={flowShellRef}>
             <span className="concept-path-fade concept-path-fade-top" />
 
-            <span className="concept-path-line" />
-
             <span className="concept-path-list">
+              <span className="concept-path-line" />
               {flowNodes.map((node) => {
                 const isCurrent = node.id === currentConceptId;
 
@@ -198,6 +221,7 @@ function ConceptGraphPopover({
                 return (
                   <span
                     key={node.id}
+                    ref={isCurrent ? currentConceptRef : undefined}
                     className={
                       isCurrent
                         ? "concept-path-item concept-path-item-current"
@@ -230,113 +254,19 @@ function ConceptGraphPopover({
 
 function buildConceptFlowNodes(
   graph: ConceptGraph | null,
-  currentConceptId: string | null,
-  sessionConceptIds: string[],
 ): ConceptGraph["nodes"] {
   if (!graph || graph.nodes.length === 0) {
     return [];
   }
 
-  const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
-
-  const ordered: ConceptGraph["nodes"] = [];
-
   /*
-   * The live StudySession order is the strongest signal
-   * for the learner-facing flow.
+   * Preserve the Study Pack's concept order.
+   *
+   * The current concept is centered when the learner opens
+   * Concept Flow. Earlier concepts therefore remain above it,
+   * while later concepts remain below it.
    */
-  for (const conceptId of sessionConceptIds) {
-    const node = nodeById.get(conceptId);
-
-    if (node) {
-      ordered.push(node);
-    }
-  }
-
-  /*
-   * If the graph contains related concepts not currently
-   * selected into the session, include a small number of
-   * immediate neighbors to give the path some context.
-   */
-  const selectedIds = new Set(ordered.map((node) => node.id));
-
-  if (currentConceptId) {
-    const neighboringIds: string[] = [];
-
-    for (const edge of graph.edges) {
-      if (
-        edge.sourceConceptId === currentConceptId &&
-        !selectedIds.has(edge.targetConceptId)
-      ) {
-        neighboringIds.push(edge.targetConceptId);
-      }
-
-      if (
-        edge.targetConceptId === currentConceptId &&
-        !selectedIds.has(edge.sourceConceptId)
-      ) {
-        neighboringIds.push(edge.sourceConceptId);
-      }
-    }
-
-    for (const neighborId of neighboringIds) {
-      const node = nodeById.get(neighborId);
-
-      if (!node) {
-        continue;
-      }
-
-      ordered.push(node);
-      selectedIds.add(node.id);
-
-      if (ordered.length >= 7) {
-        break;
-      }
-    }
-  }
-
-  /*
-   * Ensure the current concept is present even if a stale
-   * session snapshot somehow omitted it from conceptFlow.
-   */
-  if (
-    currentConceptId &&
-    !ordered.some((node) => node.id === currentConceptId)
-  ) {
-    const current = nodeById.get(currentConceptId);
-
-    if (current) {
-      ordered.unshift(current);
-    }
-  }
-
-  /*
-   * Keep the hover visualization intentionally compact.
-   * Recenter the visible window around the current node.
-   */
-  const currentIndex = ordered.findIndex(
-    (node) => node.id === currentConceptId,
-  );
-
-  if (ordered.length <= 7) {
-    return ordered;
-  }
-
-  if (currentIndex === -1) {
-    return ordered.slice(0, 7);
-  }
-
-  let start = Math.max(0, currentIndex - 3);
-
-  let end = start + 7;
-
-  if (end > ordered.length) {
-    end = ordered.length;
-
-    start = Math.max(0, end - 7);
-  }
-
-  return ordered.slice(start, end);
+  return graph.nodes;
 }
 
 function MasteryRing({ percentage }: { percentage: number }) {

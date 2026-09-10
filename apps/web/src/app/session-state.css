@@ -4558,3 +4558,477 @@
   padding-top: 4px !important;
   padding-bottom: 4px !important;
 }
+
+/* =========================================================
+   ANSWER ANALYSIS — TOP RIGHT CONTINUE ACTION
+   Keep progression permanently visible in the analysis header.
+   ========================================================= */
+
+.analysis-dashboard .analysis-dashboard-topbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.analysis-dashboard .analysis-topbar-actions {
+  flex: 0 0 auto;
+  margin-left: auto;
+
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.analysis-dashboard .analysis-top-next-button {
+  flex: 0 0 auto;
+
+  margin: 0;
+  align-self: flex-start;
+
+  min-width: 138px;
+  min-height: 38px;
+
+  padding: 0 16px;
+  border-radius: 999px;
+
+  white-space: nowrap;
+}
+
+/* The footer now contains status only. */
+.analysis-dashboard .analysis-dashboard-footer {
+  justify-content: flex-start;
+}
+
+/* On narrower layouts, keep the action available without overflow. */
+@media (max-width: 760px) {
+  .analysis-dashboard .analysis-dashboard-topbar {
+    flex-wrap: wrap;
+  }
+
+  .analysis-dashboard .analysis-topbar-actions {
+    width: 100%;
+    margin-left: 0;
+    justify-content: flex-start;
+  }
+}
+
+/* =========================================================
+   ANSWER ANALYSIS — REGRESSION RESTORE V3
+   Restore intended compact, scrollable analysis behavior.
+   ========================================================= */
+
+/* Slightly lower and slightly left, as requested. */
+.analysis-dashboard .analysis-top-next-button {
+  transform: translate(-10px, 6px);
+}
+
+/* ---------------------------------------------------------
+   Key Pointers — vertical numbered list, not horizontal cards
+   --------------------------------------------------------- */
+
+.analysis-pointer-list.analysis-pointer-checklist {
+  display: flex !important;
+  flex-direction: column !important;
+
+  grid-template-columns: none !important;
+
+  gap: 0 !important;
+
+  margin-top: 8px !important;
+}
+
+.analysis-pointer-checklist .analysis-pointer-item {
+  flex: 0 0 auto;
+
+  display: grid !important;
+  grid-template-columns: 30px minmax(0, 1fr) !important;
+
+  align-items: start !important;
+
+  gap: 8px !important;
+
+  min-height: 0 !important;
+
+  padding: 7px 0 !important;
+
+  border: none !important;
+  border-radius: 0 !important;
+
+  background: transparent !important;
+}
+
+.analysis-pointer-checklist
+  .analysis-pointer-item
+  + .analysis-pointer-item {
+  border-top: 1px solid rgba(255, 255, 255, 0.065) !important;
+}
+
+.analysis-pointer-checklist .analysis-pointer-item p {
+  font-size: 9px !important;
+  line-height: 1.45 !important;
+}
+
+/* ---------------------------------------------------------
+   Desktop single-frame layout
+   --------------------------------------------------------- */
+
+@media (min-width: 1181px) and (min-height: 720px) {
+
+  /*
+   * Next Question now lives in the header.
+   * The old footer row no longer needs to reserve space.
+   */
+  .app-page:has(.analysis-dashboard) .analysis-dashboard {
+    grid-template-areas:
+      "header header"
+      "metrics metrics"
+      "answer answer"
+      "positive missed"
+      "misconception pointers"
+      "material material";
+
+    grid-template-rows:
+      auto
+      auto
+      auto
+      minmax(100px, 0.9fr)
+      minmax(112px, 1fr)
+      minmax(145px, 1.25fr);
+  }
+
+  /*
+   * Keep the Key Pointers heading stationary and let
+   * the list itself scroll vertically.
+   */
+  .app-page:has(.analysis-dashboard) .analysis-key-pointers {
+    display: flex !important;
+    flex-direction: column !important;
+
+    min-height: 0 !important;
+
+    overflow: hidden !important;
+  }
+
+  .app-page:has(.analysis-dashboard)
+    .analysis-key-pointers
+    .analysis-section-heading {
+    flex: 0 0 auto;
+  }
+
+  .app-page:has(.analysis-dashboard)
+    .analysis-pointer-list.analysis-pointer-checklist {
+    flex: 1 1 auto;
+
+    min-height: 0 !important;
+
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+
+    padding-right: 7px !important;
+
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+
+    overscroll-behavior: contain;
+  }
+
+  .app-page:has(.analysis-dashboard)
+    .analysis-pointer-list.analysis-pointer-checklist::-webkit-scrollbar {
+    width: 4px;
+  }
+
+  .app-page:has(.analysis-dashboard)
+    .analysis-pointer-list.analysis-pointer-checklist::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .app-page:has(.analysis-dashboard)
+    .analysis-pointer-list.analysis-pointer-checklist::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+
+    background: rgba(255, 255, 255, 0.2);
+  }
+
+  /*
+   * Evidence card itself must remain completely inside
+   * the dashboard. Only its source contents scroll.
+   */
+  .app-page:has(.analysis-dashboard) .analysis-material-section {
+    display: flex !important;
+    flex-direction: column !important;
+
+    min-height: 0 !important;
+
+    overflow: hidden !important;
+
+    padding: 12px 15px 13px !important;
+  }
+
+  .app-page:has(.analysis-dashboard) .analysis-material-heading {
+    flex: 0 0 auto;
+
+    margin-right: 0 !important;
+  }
+
+  .app-page:has(.analysis-dashboard) .analysis-source-placeholder-grid {
+    flex: 1 1 auto;
+
+    min-height: 0 !important;
+
+    margin-top: 8px !important;
+
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+
+    padding-right: 5px !important;
+    padding-bottom: 2px !important;
+
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+  }
+
+  .app-page:has(.analysis-dashboard)
+    .analysis-source-placeholder-grid::-webkit-scrollbar {
+    width: 4px;
+  }
+
+  .app-page:has(.analysis-dashboard)
+    .analysis-source-placeholder-grid::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+
+    background: rgba(255, 255, 255, 0.2);
+  }
+}
+
+/* =========================================================
+   CONCEPT FLOW — FULL STUDY PACK SCROLL
+   ========================================================= */
+
+.study-sidebar-final .concept-flow-hover-panel {
+  min-height: 0 !important;
+
+  height: auto !important;
+
+  max-height: 70vh !important;
+}
+
+.study-sidebar-final .concept-flow-hover-header {
+  flex: 0 0 auto;
+}
+
+.study-sidebar-final .concept-path-shell {
+  min-height: 0 !important;
+
+  max-height: 56vh !important;
+
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+
+  padding-right: 5px;
+
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+
+  overscroll-behavior: contain;
+}
+
+.study-sidebar-final .concept-path-shell::-webkit-scrollbar {
+  width: 4px;
+}
+
+.study-sidebar-final .concept-path-shell::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.study-sidebar-final .concept-path-shell::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.study-sidebar-final .concept-path-list {
+  padding-top: 12px;
+  padding-bottom: 18px;
+}
+
+/* =========================================================
+   CONCEPT FLOW — MOVING SCROLL PATH V4
+   Fixed popover + vertically moving concept timeline.
+   ========================================================= */
+
+.study-sidebar-final .concept-path-shell {
+  position: relative;
+
+  min-height: 0 !important;
+  max-height: 56vh !important;
+
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+
+  overscroll-behavior: contain;
+
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+}
+
+.study-sidebar-final .concept-path-list {
+  position: relative;
+
+  min-height: max-content;
+
+  padding-top: 18px;
+  padding-bottom: 24px;
+}
+
+/*
+ * The line now lives inside .concept-path-list rather than
+ * the viewport shell. Its height therefore follows the whole
+ * timeline and moves together with the concept nodes.
+ */
+.study-sidebar-final
+  .concept-path-list
+  > .concept-path-line {
+  position: absolute !important;
+
+  top: 15px !important;
+  bottom: 15px !important;
+  left: 26px !important;
+
+  height: auto !important;
+}
+
+/* Keep a subtle scroll indicator without distracting from nodes. */
+.study-sidebar-final .concept-path-shell::-webkit-scrollbar {
+  width: 4px;
+}
+
+.study-sidebar-final .concept-path-shell::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.study-sidebar-final .concept-path-shell::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.study-sidebar-final .concept-path-shell::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.32);
+}
+
+/* =========================================================
+   ANSWER ANALYSIS — PREVENT BOTTOM CARD CLIPPING
+   ========================================================= */
+
+@media (min-width: 1181px) and (min-height: 720px) {
+
+  /*
+   * The older single-viewport layout used overflow:hidden.
+   * That was clipping the bottom border of the evidence card.
+   *
+   * Keep the compact layout, but permit a few pixels of
+   * vertical page overflow whenever the dashboard needs it.
+   */
+  .app-page:has(.analysis-dashboard) {
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+  }
+
+  .app-page:has(.analysis-dashboard) .app-shell {
+    overflow: visible !important;
+  }
+
+  .app-page:has(.analysis-dashboard) .study-page-layout {
+    overflow: visible !important;
+
+    padding-bottom: 22px !important;
+  }
+
+  /*
+   * The material section itself remains internally controlled;
+   * only the page is allowed to expose its complete border.
+   */
+  .app-page:has(.analysis-dashboard) .analysis-material-section {
+    box-sizing: border-box;
+  }
+}
+
+
+/* =========================================================
+   ANSWER ANALYSIS — NATURAL PAGE HEIGHT FINAL FIX
+   Never clip the evidence/source-review card.
+   ========================================================= */
+
+@media (min-width: 1181px) and (min-height: 720px) {
+
+  /*
+   * Analysis may be slightly taller than the viewport.
+   * Content correctness is more important than pretending
+   * everything always fits inside exactly 100vh.
+   */
+  .app-page:has(.analysis-dashboard) {
+    height: auto !important;
+    min-height: 100vh !important;
+
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+  }
+
+  .app-page:has(.analysis-dashboard) .app-shell {
+    height: auto !important;
+    min-height: 100vh !important;
+
+    grid-template-rows: auto auto !important;
+
+    overflow: visible !important;
+  }
+
+  .app-page:has(.analysis-dashboard) .study-page-layout {
+    height: auto !important;
+    min-height: 0 !important;
+
+    align-items: start !important;
+
+    overflow: visible !important;
+
+    padding-bottom: 36px !important;
+  }
+
+  /*
+   * This was the important remaining clipping boundary.
+   */
+  .app-page:has(.analysis-dashboard) .analysis-dashboard {
+    height: auto !important;
+    min-height: 0 !important;
+
+    overflow: visible !important;
+
+    grid-template-rows:
+      auto
+      auto
+      auto
+      minmax(100px, auto)
+      minmax(112px, auto)
+      minmax(150px, auto) !important;
+  }
+
+  /*
+   * The source section owns its full visible border.
+   * Its internal list can still scroll when several
+   * source documents are present.
+   */
+  .app-page:has(.analysis-dashboard) .analysis-material-section {
+    min-height: 150px !important;
+    height: auto !important;
+
+    overflow: hidden !important;
+
+    margin-bottom: 0 !important;
+  }
+
+  .app-page:has(.analysis-dashboard) .study-sidebar-final {
+    height: auto !important;
+    align-self: start !important;
+  }
+}

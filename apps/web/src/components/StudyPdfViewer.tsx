@@ -38,6 +38,7 @@ type StudyPdfViewerProps = {
   evidenceSources: EvidenceSource[];
 
   studyPoints: MaterialStudyPoint[];
+  autoLocateEvidence?: boolean;
 };
 
 type PdfRenderTask = ReturnType<PDFPageProxy["render"]>;
@@ -98,6 +99,7 @@ export default function StudyPdfViewer({
   initialPage,
   evidenceSources,
   studyPoints,
+  autoLocateEvidence = false,
 }: StudyPdfViewerProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -108,6 +110,23 @@ export default function StudyPdfViewer({
   const [error, setError] = useState<string | null>(null);
 
   const [currentPage, setCurrentPage] = useState(initialPage || 1);
+
+  const [resolvedInitialPage, setResolvedInitialPage] =
+    useState(initialPage || 1);
+
+  const [resolvedEvidenceSources, setResolvedEvidenceSources] =
+    useState(evidenceSources);
+
+  const evidenceSignature = useMemo(
+    () =>
+      evidenceSources
+        .map(
+          (source) =>
+            `${source.chunkId}:${source.pageNumber}:${source.excerpt}`,
+        )
+        .join("|"),
+    [evidenceSources],
+  );
 
   const [zoom, setZoom] = useState(1);
 
@@ -133,12 +152,34 @@ export default function StudyPdfViewer({
 
         const loadedPdf = await loadingTask.promise;
 
+        let nextEvidenceSources = evidenceSources;
+
+        let nextInitialPage = Math.min(
+          Math.max(initialPage || 1, 1),
+          loadedPdf.numPages,
+        );
+
+        if (
+          autoLocateEvidence &&
+          evidenceSources.length > 0
+        ) {
+          const located = await locateEvidenceSourcesInPdf(
+            loadedPdf,
+            evidenceSources,
+          );
+
+          nextEvidenceSources = located.evidenceSources;
+
+          if (located.initialPage !== null) {
+            nextInitialPage = located.initialPage;
+          }
+        }
+
         if (!cancelled) {
           setPdf(loadedPdf);
-
-          setCurrentPage(
-            Math.min(Math.max(initialPage || 1, 1), loadedPdf.numPages),
-          );
+          setResolvedEvidenceSources(nextEvidenceSources);
+          setResolvedInitialPage(nextInitialPage);
+          setCurrentPage(nextInitialPage);
         }
       } catch (caught) {
         console.error("Could not load StudyLoop PDF:", caught);
@@ -154,7 +195,12 @@ export default function StudyPdfViewer({
     return () => {
       cancelled = true;
     };
-  }, [fileUrl, initialPage]);
+  }, [
+    fileUrl,
+    initialPage,
+    autoLocateEvidence,
+    evidenceSignature,
+  ]);
 
   function goToPage(pageNumber: number) {
     if (!pdf) {
@@ -191,7 +237,10 @@ export default function StudyPdfViewer({
       return;
     }
 
-    const target = Math.min(Math.max(initialPage || 1, 1), pdf.numPages);
+    const target = Math.min(
+      Math.max(resolvedInitialPage || 1, 1),
+      pdf.numPages,
+    );
 
     let cancelled = false;
 
@@ -235,7 +284,7 @@ export default function StudyPdfViewer({
 
       window.clearTimeout(timeout);
     };
-  }, [pdf, initialPage, zoom]);
+  }, [pdf, resolvedInitialPage, zoom]);
 
   function handleScroll() {
     const container = scrollRef.current;
@@ -331,7 +380,7 @@ export default function StudyPdfViewer({
 
           (_, index) => index + 1,
         ).map((pageNumber) => {
-          const pageEvidence = evidenceSources.filter(
+          const pageEvidence = resolvedEvidenceSources.filter(
             (source) => source.pageNumber === pageNumber,
           );
 
@@ -356,6 +405,131 @@ export default function StudyPdfViewer({
       </div>
     </div>
   );
+}
+
+
+async function locateEvidenceSourcesInPdf(
+  pdf: PDFDocumentProxy,
+  evidenceSources: EvidenceSource[],
+): Promise<{
+  evidenceSources: EvidenceSource[];
+  initialPage: number | null;
+}> {
+  const pages: {
+    pageNumber: number;
+    normalizedText: string;
+    tokens: Set<string>;
+  }[] = [];
+
+  /*
+   * DOCX and other converted documents do not necessarily
+   * preserve parser-unit numbers as rendered PDF pages.
+   * Read every generated PDF page and find the page whose
+   * text best matches each stored evidence excerpt.
+   */
+  for (
+    let pageNumber = 1;
+    pageNumber <= pdf.numPages;
+    pageNumber += 1
+  ) {
+    const page = await pdf.getPage(pageNumber);
+    const content = await page.getTextContent();
+
+    const text = content.items
+      .filter(
+        (item): item is TextItem =>
+          "str" in item,
+      )
+      .map((item) => item.str)
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    pages.push({
+      pageNumber,
+      normalizedText: normalizeText(text),
+      tokens: significantTokens(text),
+    });
+  }
+
+  const locatedEvidence = evidenceSources.map((source) => {
+    const cleaned = cleanEvidenceText(source.excerpt);
+    const queryTokens = significantTokens(cleaned);
+
+    if (queryTokens.size === 0 || pages.length === 0) {
+      return {
+        ...source,
+        pageNumber:
+          source.pageNumber > 0
+            ? source.pageNumber
+            : 1,
+      };
+    }
+
+    const normalizedQuery = normalizeText(cleaned);
+
+    const usefulWords = normalizedQuery
+      .split(/\s+/)
+      .filter(
+        (word) =>
+          word.length >= 4 &&
+          !STOP_WORDS.has(word),
+      );
+
+    const phrase = usefulWords
+      .slice(0, Math.min(6, usefulWords.length))
+      .join(" ");
+
+    let bestPage = pages[0];
+    let bestScore = Number.NEGATIVE_INFINITY;
+
+    for (const page of pages) {
+      let matches = 0;
+
+      for (const token of queryTokens) {
+        if (page.tokens.has(token)) {
+          matches += 1;
+        }
+      }
+
+      const tokenScore =
+        matches /
+        Math.max(
+          1,
+          Math.min(queryTokens.size, 40),
+        );
+
+      const phraseBoost =
+        phrase.length > 0 &&
+        page.normalizedText.includes(phrase)
+          ? 0.75
+          : 0;
+
+      const score = tokenScore + phraseBoost;
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestPage = page;
+      }
+    }
+
+    return {
+      ...source,
+      pageNumber: bestPage.pageNumber,
+    };
+  });
+
+  const locatedPages = locatedEvidence
+    .map((source) => source.pageNumber)
+    .filter((pageNumber) => pageNumber > 0);
+
+  return {
+    evidenceSources: locatedEvidence,
+    initialPage:
+      locatedPages.length > 0
+        ? Math.min(...locatedPages)
+        : null,
+  };
 }
 
 function PdfPage({
@@ -599,18 +773,18 @@ function renderStudyHighlights({
   evidenceSources,
 }: {
   overlay: HTMLDivElement;
-
   viewport: ReturnType<PDFPageProxy["getViewport"]>;
-
   textItems: TextItem[];
-
   studyPoints: MaterialStudyPoint[];
-
   evidenceSources: EvidenceSource[];
 }) {
   overlay.innerHTML = "";
 
-  if (studyPoints.length === 0 || textItems.length === 0) {
+  if (
+    studyPoints.length === 0 ||
+    evidenceSources.length === 0 ||
+    textItems.length === 0
+  ) {
     return;
   }
 
@@ -621,179 +795,522 @@ function renderStudyHighlights({
   }
 
   /*
-   * Prefer actual body material.
-   * If an Abstract exists, title/authors are discarded.
+   * ---------------------------------------------------------
+   * PRINCIPLE
+   * ---------------------------------------------------------
+   *
+   * Study Points decide WHAT the learner needs to revisit.
+   *
+   * Stored evidence decides WHERE that information is allowed
+   * to be highlighted.
+   *
+   * This prevents a large evidence chunk from causing unrelated
+   * headings such as "Previous Lectures", "Supervised Learning",
+   * etc. to be painted simply because they occur in the chunk.
    */
-  const abstractIndex = lines.findIndex((line) =>
-    normalizeText(line.text).startsWith("abstract"),
-  );
 
-  const bodyLines =
-    abstractIndex >= 0
-      ? lines.slice(abstractIndex)
-      : lines.filter((line) => !looksLikeFrontMatter(line.text));
+  const studyTargets = studyPoints.map((point) => {
+    /*
+     * Titles and searchText represent the actual thing the
+     * learner needs to know.
+     *
+     * Explanation is retained separately as weaker context,
+     * because explanations can mention comparison concepts
+     * (for example supervised learning) that are not themselves
+     * the target of the answer.
+     */
+    const primaryText = expandStudyAliases(
+      `${point.title} ${point.searchText}`,
+    );
 
-  if (bodyLines.length === 0) {
-    return;
-  }
+    const supportingText = expandStudyAliases(
+      point.explanation,
+    );
 
-  const pageContext = evidenceSources
+    return {
+      point,
+      primaryText,
+      primaryTokens: significantTokens(primaryText),
+      supportingTokens: significantTokens(supportingText),
+    };
+  });
+
+  const evidenceText = evidenceSources
     .map((source) => stripFrontMatter(source.excerpt))
     .join(" ");
 
-  const contextTokens = significantTokens(pageContext);
+  const evidenceNormalized = normalizeText(
+    expandStudyAliases(evidenceText),
+  );
+
+  const evidenceTokens = significantTokens(
+    expandStudyAliases(evidenceText),
+  );
 
   /*
-   * IMPORTANT:
-   *
-   * One line is assigned primarily to one study point.
-   *
-   * Previously the first point could claim every strong
-   * line, meaning yellow appeared everywhere while violet
-   * and cyan never received their own passages.
+   * Score every visual line against the ACTUAL answer targets.
    */
-  const usedPrimaryLines = new Set<number>();
+  const scoredLines = lines.map((line, index) => {
+    const expandedLine = expandStudyAliases(line.text);
 
-  let highlightCount = 0;
+    const lineTokens = significantTokens(expandedLine);
 
-  for (const point of studyPoints) {
-    const queryTokens = significantTokens(
-      [point.title, point.explanation, point.searchText].join(" "),
-    );
+    let bestTargetScore = 0;
+    let bestColorIndex = studyPoints[0]?.colorIndex ?? 0;
 
-    if (queryTokens.size === 0) {
-      continue;
-    }
+    for (const target of studyTargets) {
+      const primaryShared = sharedTokenCount(
+        lineTokens,
+        target.primaryTokens,
+      );
 
-    const candidates = bodyLines
-      .map((line, index) => {
-        const lineTokens = significantTokens(line.text);
+      const supportingShared = sharedTokenCount(
+        lineTokens,
+        target.supportingTokens,
+      );
 
-        const pointOverlap = tokenOverlap(queryTokens, lineTokens);
+      const primaryCoverage =
+        primaryShared /
+        Math.max(
+          1,
+          Math.min(lineTokens.size, 12),
+        );
 
-        const sourceOverlap = tokenOverlap(contextTokens, lineTokens);
+      const supportingCoverage =
+        supportingShared /
+        Math.max(
+          1,
+          Math.min(lineTokens.size, 12),
+        );
 
-        const phraseBoost = containsUsefulPhrase(
-          line.normalizedText,
-          point.searchText,
+      const targetCoverage =
+        primaryShared /
+        Math.max(
+          1,
+          Math.min(target.primaryTokens.size, 18),
+        );
+
+      const phraseBoost =
+        containsUsefulPhrase(
+          normalizeText(expandedLine),
+          target.primaryText,
         )
-          ? 1.4
+          ? 1.1
           : 0;
 
-        return {
-          index,
-
-          line,
-
-          pointOverlap,
-
-          sourceOverlap,
-
-          score: pointOverlap * 4 + sourceOverlap * 1.15 + phraseBoost,
-        };
-      })
       /*
-       * It still has to belong to the historical
-       * evidence context. We do not color arbitrary text
-       * just to force all three colors to appear.
+       * Primary study-point wording is deliberately much more
+       * important than explanatory wording.
        */
-      .filter(
-        (candidate) =>
-          candidate.pointOverlap >= 0.08 || candidate.sourceOverlap >= 0.1,
-      )
-      .sort((a, b) => b.score - a.score);
+      const score =
+        primaryCoverage * 2.4 +
+        targetCoverage * 0.8 +
+        supportingCoverage * 0.3 +
+        phraseBoost;
 
-    if (candidates.length === 0) {
-      continue;
+      if (score > bestTargetScore) {
+        bestTargetScore = score;
+        bestColorIndex = target.point.colorIndex;
+      }
     }
 
-    /*
-     * Prefer a line that no earlier study point owns.
-     */
-    let selected = candidates.find(
-      (candidate) =>
-        !usedPrimaryLines.has(candidate.index) && candidate.score >= 0.45,
+    const evidenceShared = sharedTokenCount(
+      lineTokens,
+      evidenceTokens,
     );
 
-    /*
-     * If two analysis points are semantically very close,
-     * use another historically-supported line on the same
-     * evidence page rather than painting the first line twice.
-     */
-    if (!selected) {
-      selected = candidates.find(
-        (candidate) =>
-          !usedPrimaryLines.has(candidate.index) &&
-          candidate.sourceOverlap >= 0.08,
+    const evidenceCoverage =
+      evidenceShared /
+      Math.max(
+        1,
+        Math.min(lineTokens.size, 14),
       );
-    }
 
-    /*
-     * Last resort: use the strongest genuine match.
-     * Better to show a valid repeated concept than an
-     * unrelated colored sentence.
-     */
-    if (!selected) {
-      selected = candidates[0];
-    }
+    const normalizedLine = normalizeText(
+      expandedLine,
+    );
 
-    if (!selected) {
+    const exactEvidenceLine =
+      normalizedLine.length >= 8 &&
+      evidenceNormalized.includes(normalizedLine);
+
+    return {
+      index,
+      line,
+      lineTokens,
+      targetScore: bestTargetScore,
+      evidenceCoverage,
+      evidenceShared,
+      exactEvidenceLine,
+      colorIndex: bestColorIndex,
+    };
+  });
+
+  /*
+   * ---------------------------------------------------------
+   * 1. Find answer-target seeds.
+   * ---------------------------------------------------------
+   *
+   * These are the lines that directly correspond to something
+   * the learner was expected to say.
+   */
+
+  const seedIndices = new Set<number>();
+
+  for (const candidate of scoredLines) {
+    if (candidate.lineTokens.size === 0) {
       continue;
     }
 
-    usedPrimaryLines.add(selected.index);
+    const grounded =
+      candidate.exactEvidenceLine ||
+      candidate.evidenceShared >= 1;
 
-    highlightLine(overlay, viewport, selected.line, point.colorIndex);
+    const directlyUseful =
+      candidate.targetScore >= 0.62;
 
-    highlightCount += 1;
+    if (grounded && directlyUseful) {
+      seedIndices.add(candidate.index);
+    }
+  }
 
+  if (seedIndices.size === 0) {
     /*
-     * Also include one continuation line when it belongs
-     * to the same source context. This gives the learner
-     * enough text to actually study.
+     * Conservative fallback:
+     * choose only the strongest answer-related lines, rather
+     * than reverting to painting the whole evidence chunk.
      */
-    const nextIndex = selected.index + 1;
+    scoredLines
+      .filter(
+        (candidate) =>
+          candidate.evidenceShared >= 1 &&
+          candidate.targetScore > 0,
+      )
+      .sort(
+        (a, b) =>
+          b.targetScore - a.targetScore,
+      )
+      .slice(0, Math.max(1, studyPoints.length))
+      .forEach((candidate) => {
+        seedIndices.add(candidate.index);
+      });
+  }
 
-    if (nextIndex < bodyLines.length) {
-      const nextLine = bodyLines[nextIndex];
+  if (seedIndices.size === 0) {
+    return;
+  }
 
-      const nextContextOverlap = tokenOverlap(
-        contextTokens,
-        significantTokens(nextLine.text),
-      );
+  /*
+   * ---------------------------------------------------------
+   * 2. Expand each seed into its COMPLETE LOCAL CONCEPT BLOCK.
+   * ---------------------------------------------------------
+   *
+   * A concept in slides frequently looks like:
+   *
+   * Reinforcement learning
+   *   - explanation line
+   *   - explanation line
+   *
+   * We therefore include neighbouring lines when they remain
+   * supported by the stored evidence.
+   *
+   * Expansion STOPS when we hit another short unrelated heading.
+   */
 
-      if (nextContextOverlap >= 0.08) {
-        highlightLine(overlay, viewport, nextLine, point.colorIndex);
+  const selectedIndices = new Set<number>(
+    seedIndices,
+  );
+
+  for (const seedIndex of seedIndices) {
+    /*
+     * Up to four visual lines in either direction is enough
+     * to capture a compact slide concept without swallowing
+     * unrelated sections elsewhere on the page.
+     */
+    for (const direction of [-1, 1]) {
+      for (let distance = 1; distance <= 4; distance += 1) {
+        const index =
+          seedIndex + direction * distance;
+
+        if (
+          index < 0 ||
+          index >= scoredLines.length
+        ) {
+          break;
+        }
+
+        const candidate = scoredLines[index];
+
+        if (candidate.lineTokens.size === 0) {
+          continue;
+        }
+
+        /*
+         * A short heading with no answer-target relationship
+         * marks the start of a different concept.
+         *
+         * Example:
+         *
+         *   Unsupervised Learning
+         *   Reinforcement Learning
+         *
+         * We must not cross from one into the other.
+         */
+        if (
+          looksLikeUnrelatedConceptHeading(
+            candidate,
+          )
+        ) {
+          break;
+        }
+
+        const evidenceSupported =
+          candidate.exactEvidenceLine ||
+          candidate.evidenceCoverage >= 0.2 ||
+          candidate.evidenceShared >= 2;
+
+        const answerSupported =
+          candidate.targetScore >= 0.18;
+
+        /*
+         * Strong evidence support is enough for a continuation
+         * line once we're already inside a relevant concept.
+         *
+         * This is the key change that lets the complete
+         * explanation underneath a heading become highlighted.
+         */
+        if (
+          evidenceSupported ||
+          answerSupported
+        ) {
+          selectedIndices.add(index);
+          continue;
+        }
+
+        /*
+         * Stop when we've left the locally relevant block.
+         */
+        if (distance >= 2) {
+          break;
+        }
       }
     }
   }
 
   /*
-   * If the Answer Analysis wording differs heavily from
-   * the PDF text, fall back to historical evidence lines.
+   * ---------------------------------------------------------
+   * 3. Also capture diagram vocabulary required by the answer.
+   * ---------------------------------------------------------
+   *
+   * Diagram labels such as:
+   *
+   * agent / environment / action / reward / new state
+   *
+   * might be physically far from the text paragraph and cannot
+   * be reached by neighbour expansion. If they directly match
+   * the study targets, include them independently.
    */
-  if (highlightCount === 0) {
-    const fallback = bodyLines
-      .map((line, index) => ({
-        index,
 
-        line,
-
-        score: tokenOverlap(contextTokens, significantTokens(line.text)),
-      }))
-      .filter((candidate) => candidate.score >= 0.08)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, Math.min(3, studyPoints.length));
-
-    fallback.forEach((candidate, index) => {
-      highlightLine(
-        overlay,
-        viewport,
-        candidate.line,
-        studyPoints[index]?.colorIndex ?? index % 3,
-      );
-    });
+  for (const candidate of scoredLines) {
+    if (
+      candidate.targetScore >= 0.72 &&
+      (
+        candidate.exactEvidenceLine ||
+        candidate.evidenceShared >= 1
+      )
+    ) {
+      selectedIndices.add(candidate.index);
+    }
   }
+
+  /*
+   * ---------------------------------------------------------
+   * 4. Render.
+   * ---------------------------------------------------------
+   */
+
+  const ordered = Array.from(
+    selectedIndices,
+  ).sort((a, b) => a - b);
+
+  for (const index of ordered) {
+    const candidate = scoredLines[index];
+
+    const colorIndex =
+      bestStudyPointColorForLine(
+        candidate.line,
+        studyPoints,
+      );
+
+    highlightLine(
+      overlay,
+      viewport,
+      candidate.line,
+      colorIndex,
+    );
+  }
+}
+
+function expandStudyAliases(value: string): string {
+  /*
+   * Short educational abbreviations such as "RL" are normally
+   * removed by significantTokens() because two-letter tokens
+   * are deliberately ignored.
+   *
+   * Expand the ones needed by the source material before
+   * tokenization.
+   */
+  return value
+    .replace(
+      /\bRL\b/gi,
+      "reinforcement learning",
+    )
+    .replace(
+      /\bMDP\b/gi,
+      "markov decision process",
+    );
+}
+
+function looksLikeUnrelatedConceptHeading(
+  candidate: {
+    line: LineGroup;
+    lineTokens: Set<string>;
+    targetScore: number;
+    evidenceShared: number;
+  },
+): boolean {
+  const text = candidate.line.text.trim();
+
+  const wordCount = text
+    .split(/\s+/)
+    .filter(Boolean)
+    .length;
+
+  /*
+   * Slide headings and subsection labels tend to be short.
+   *
+   * We only treat them as boundaries when they have virtually
+   * no relationship to what the learner is expected to answer.
+   */
+  return (
+    wordCount <= 6 &&
+    candidate.lineTokens.size <= 6 &&
+    candidate.targetScore < 0.12 &&
+    candidate.evidenceShared <= 2
+  );
+}
+
+function sharedTokenCount(
+  first: Set<string>,
+  second: Set<string>,
+): number {
+  let count = 0;
+
+  for (const token of first) {
+    if (second.has(token)) {
+      count += 1;
+    }
+  }
+
+  return count;
+}
+
+function containsSharedEvidencePhrase(
+  line: string,
+  evidence: string,
+): boolean {
+  const words = line
+    .split(/\s+/)
+    .filter(
+      (word) =>
+        word.length >= 4 &&
+        !STOP_WORDS.has(word),
+    );
+
+  /*
+   * Long phrases are strongest, but three-word phrases are
+   * useful for short PowerPoint bullets.
+   */
+  for (let size = 6; size >= 3; size -= 1) {
+    if (words.length < size) {
+      continue;
+    }
+
+    for (
+      let index = 0;
+      index <= words.length - size;
+      index += 1
+    ) {
+      const phrase = words
+        .slice(index, index + size)
+        .join(" ");
+
+      if (evidence.includes(phrase)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+function bestStudyPointColorForLine(
+  line: LineGroup,
+  studyPoints: MaterialStudyPoint[],
+): number {
+  const lineTokens = significantTokens(line.text);
+
+  let bestColor = studyPoints[0]?.colorIndex ?? 0;
+  let bestScore = Number.NEGATIVE_INFINITY;
+
+  for (const point of studyPoints) {
+    const pointText = [
+      point.title,
+      point.explanation,
+      point.searchText,
+    ].join(" ");
+
+    const pointTokens =
+      significantTokens(pointText);
+
+    const shared = sharedTokenCount(
+      lineTokens,
+      pointTokens,
+    );
+
+    const lineCoverage =
+      shared /
+      Math.max(
+        1,
+        Math.min(lineTokens.size, 12),
+      );
+
+    const pointCoverage =
+      shared /
+      Math.max(
+        1,
+        Math.min(pointTokens.size, 20),
+      );
+
+    const phraseBoost = containsUsefulPhrase(
+      line.normalizedText,
+      point.searchText,
+    )
+      ? 0.8
+      : 0;
+
+    const score =
+      lineCoverage * 1.4 +
+      pointCoverage * 0.4 +
+      phraseBoost;
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestColor = point.colorIndex;
+    }
+  }
+
+  return bestColor;
 }
 
 function buildLines(

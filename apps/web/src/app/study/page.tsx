@@ -813,7 +813,7 @@ function AnalysisScreen({
    * the learner needs to include in a stronger answer.
    */
   if (keyPointers.length === 0 && evaluation.missingPoints.length > 0) {
-    keyPointers.push(...evaluation.missingPoints.slice(0, 3));
+    keyPointers.push(...evaluation.missingPoints);
   }
 
   /*
@@ -845,7 +845,7 @@ function AnalysisScreen({
         .filter(Boolean)
         .map((pointer) => [pointer.toLowerCase(), pointer]),
     ).values(),
-  ).slice(0, 3);
+  );
 
   const analysisFinished = progress >= 0.98;
 
@@ -905,15 +905,26 @@ function AnalysisScreen({
                 </div>
               </div>
 
-              {audioBlocked && (
+              <div className="analysis-topbar-actions">
+                {audioBlocked && (
+                  <button
+                    className="hear-analysis-button"
+                    onClick={onHearAnalysis}
+                  >
+                    <SpeakerIcon />
+                    Hear Analysis
+                  </button>
+                )}
+
                 <button
-                  className="hear-analysis-button"
-                  onClick={onHearAnalysis}
+                  className="next-button analysis-next-button analysis-top-next-button"
+                  disabled={!analysisFinished}
+                  onClick={hasNextQuestion ? onNext : onExit}
                 >
-                  <SpeakerIcon />
-                  Hear Analysis
+                  {hasNextQuestion ? "Next Question" : "Finish Session"}
+                  <ArrowIcon />
                 </button>
-              )}
+              </div>
             </div>
 
             <div className="analysis-metric-grid">
@@ -1132,33 +1143,6 @@ function AnalysisScreen({
               />
             )}
 
-            <div className="analysis-dashboard-footer">
-              <div className="analysis-footer-note">
-                <span
-                  className={
-                    analysisFinished
-                      ? "analysis-voice-dot complete"
-                      : "analysis-voice-dot"
-                  }
-                />
-
-                <span>
-                  {analysisFinished
-                    ? "Ready to continue"
-                    : "Ryan is still explaining"}
-                </span>
-              </div>
-
-              <button
-                className="next-button analysis-next-button"
-                disabled={!analysisFinished}
-                onClick={hasNextQuestion ? onNext : onExit}
-              >
-                {hasNextQuestion ? "Next Question" : "Finish Session"}
-
-                <ArrowIcon />
-              </button>
-            </div>
           </section>
 
           <StudySidebar
@@ -1249,6 +1233,49 @@ function formatAnalysisDocumentPages(sources: AnalysisSource[]): string {
   return `Pages ${pages[0]}–${pages[pages.length - 1]}`;
 }
 
+
+function getPresentationPreviewPage(
+  source: AnalysisSource,
+): number {
+  /*
+   * If the backend already exposes a page number,
+   * trust it first.
+   */
+  if (
+    typeof source.pageNumber === "number" &&
+    source.pageNumber > 0
+  ) {
+    return source.pageNumber;
+  }
+
+  /*
+   * Most PPTX parser units expose labels such as
+   * "Slide 1", "Slide 5", etc.
+   */
+  const labelMatch = source.unitLabel.match(
+    /\b(?:slide|page)\s*[:#-]?\s*(\d+)/i,
+  );
+
+  if (labelMatch) {
+    const parsed = Number(labelMatch[1]);
+
+    if (
+      Number.isInteger(parsed) &&
+      parsed > 0
+    ) {
+      return parsed;
+    }
+  }
+
+  /*
+   * Last fallback:
+   * parser unit indices are normally zero-based while
+   * rendered PDF pages are one-based.
+   */
+  return Math.max(1, source.unitIndex + 1);
+}
+
+
 function SourcePreview({ source }: { source: AnalysisSource }) {
   const sourceUrl = buildAnalysisDocumentUrl(source);
 
@@ -1318,6 +1345,37 @@ function SourceDocumentModal({
 }) {
   const sourceUrl = buildAnalysisDocumentUrl(source);
 
+  const isPdfSource =
+    source.mimeType === "application/pdf" ||
+    source.documentName.toLowerCase().endsWith(".pdf");
+
+  const isPresentationSource =
+    source.mimeType.includes("presentationml.presentation") ||
+    /\.pptx?$/i.test(source.documentName);
+
+  const previewUrl = isPdfSource
+    ? sourceUrl
+    : sourceUrl.replace(/\/file$/, "/preview");
+
+  const previewInitialPage = isPdfSource
+    ? source.pageNumber ?? 1
+    : isPresentationSource
+      ? getPresentationPreviewPage(source)
+      : 1;
+
+  const previewEvidenceSources =
+    source.evidenceSources.map((evidence) => ({
+      chunkId: evidence.chunkId,
+
+      pageNumber: isPdfSource
+        ? evidence.pageNumber ?? 1
+        : isPresentationSource
+          ? getPresentationPreviewPage(evidence)
+          : 0,
+
+      excerpt: evidence.excerpt,
+    }));
+
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
@@ -1370,28 +1428,15 @@ function SourceDocumentModal({
         </header>
 
         <div className="analysis-document-modal-body">
-          {source.mimeType === "application/pdf" ? (
-            <StudyPdfViewer
-              fileUrl={sourceUrl}
-              initialPage={source.pageNumber ?? 1}
-              evidenceSources={source.evidenceSources.map((evidence) => ({
-                chunkId: evidence.chunkId,
-                pageNumber: evidence.pageNumber ?? 1,
-                excerpt: evidence.excerpt,
-              }))}
-              studyPoints={studyPoints}
-            />
-          ) : (
-            <div className="analysis-document-unsupported">
-              <p>
-                Inline study review is currently available for PDF material.
-              </p>
-
-              <a href={sourceUrl} target="_blank" rel="noreferrer">
-                Open original document ↗
-              </a>
-            </div>
-          )}
+          <StudyPdfViewer
+            fileUrl={previewUrl}
+            initialPage={previewInitialPage}
+            evidenceSources={previewEvidenceSources}
+            studyPoints={studyPoints}
+            autoLocateEvidence={
+              !isPdfSource && !isPresentationSource
+            }
+          />
 
           <aside className="analysis-document-evidence analysis-study-guide">
             <p className="section-kicker">WHAT TO STUDY HERE</p>
