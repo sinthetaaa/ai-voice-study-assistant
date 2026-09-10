@@ -18,8 +18,10 @@ model StudyPack {
   concepts  Concept[]
   sessions  StudySession[]
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  topics       StudyTopic[]
+  coreConcepts CoreConcept[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
 }
 
 model Document {
@@ -103,6 +105,65 @@ model DocumentChunk {
   @@index([unitId])
 }
 
+model StudyTopic {
+  id String @id @default(uuid())
+
+  studyPackId String
+  studyPack   StudyPack @relation(fields: [studyPackId], references: [id], onDelete: Cascade)
+
+  name           String
+  normalizedName String
+
+  description String? @db.Text
+
+  // Stable learner-facing order inside the Study Pack.
+  position Int @default(0)
+
+  coreConcepts CoreConcept[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([studyPackId, normalizedName])
+  @@index([studyPackId])
+  @@index([position])
+}
+
+model CoreConcept {
+  id String @id @default(uuid())
+
+  // Keep Study Pack identity directly on the Core Concept so
+  // its stable identity does not depend on which Topic the AI
+  // assigns it to during a future hierarchy refresh.
+  studyPackId String
+  studyPack   StudyPack @relation(fields: [studyPackId], references: [id], onDelete: Cascade)
+
+  topicId String
+  topic   StudyTopic @relation(fields: [topicId], references: [id], onDelete: Cascade)
+
+  name           String
+  normalizedName String
+
+  description String @db.Text
+
+  // Learner-facing importance. Atomic difficulty/mastery remain
+  // owned by the existing Concept model.
+  importance Int @default(3)
+
+  // Stable order inside the Topic.
+  position Int @default(0)
+
+  atomicConcepts Concept[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([studyPackId, normalizedName])
+  @@index([studyPackId])
+  @@index([topicId])
+  @@index([position])
+}
+
 model Concept {
   id String @id @default(uuid())
 
@@ -118,8 +179,21 @@ model Concept {
 
   difficulty ConceptDifficulty @default(INTERMEDIATE)
 
-  sources   ConceptSource[]
-  questions Question[]
+  // Learner-facing hierarchy membership.
+
+  // Nullable during migration so existing Study Packs remain valid
+
+  // until hierarchy generation/backfill has run.
+
+  coreConceptId String?
+
+  coreConcept CoreConcept? @relation(fields: [coreConceptId], references: [id], onDelete: SetNull)
+
+  // Stable ordering of Atomic Concepts inside a Core Concept.
+
+  positionInCore Int?
+  sources        ConceptSource[]
+  questions      Question[]
 
   mastery       ConceptMastery?
   masteryEvents MasteryEvent[]
@@ -135,6 +209,7 @@ model Concept {
 
   @@unique([studyPackId, normalizedName])
   @@index([studyPackId])
+  @@index([coreConceptId, positionInCore])
 }
 
 model ConceptSource {
