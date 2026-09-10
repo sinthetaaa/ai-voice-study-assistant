@@ -200,10 +200,6 @@ type SessionPlanConcept = {
   } | null;
 };
 
-type PreparedSessionConcept = SessionPlanConcept & {
-  questions: StudySessionQuestion[];
-};
-
 export type StudySessionAnalysisSource = {
   chunkId: string;
 
@@ -631,35 +627,33 @@ export class StudySessionsService {
       ),
     ];
 
-    const preparedConcepts: PreparedSessionConcept[] = [];
-
     /*
-     * Prepare sequentially.
+     * SESSION STARTUP V2
      *
-     * Local LLM generation is intentionally not
-     * parallelized because concurrent generation
-     * would increase resource contention without
-     * improving session correctness.
+     * Persist the full five-concept learning plan, but prepare
+     * questions only for the concept the learner is about to
+     * study.
      *
-     * QuestionsService itself preserves stable
-     * (conceptId, type) identities.
+     * Previously StudyLoop generated the complete three-question
+     * bundle for every selected concept sequentially before the
+     * session could begin. For a five-concept session that meant
+     * as many as five expensive AI generation calls before
+     * Question 1 appeared.
+     *
+     * The current concept still receives its complete baseline
+     * RECALL / UNDERSTANDING / APPLICATION bundle because the
+     * existing adaptive ladder expects those stable baseline
+     * questions to exist.
      */
-    for (const concept of selectedConcepts) {
-      const questions = await this.ensureConceptQuestionSet(
+    const firstConcept = selectedConcepts[0];
+
+    const firstConceptQuestions =
+      await this.ensureConceptQuestionSet(
         studyPackId,
-        concept.id,
+        firstConcept.id,
       );
 
-      preparedConcepts.push({
-        ...concept,
-
-        questions,
-      });
-    }
-
-    const firstConcept = preparedConcepts[0];
-
-    const firstQuestion = firstConcept.questions.find(
+    const firstQuestion = firstConceptQuestions.find(
       (question) => question.type === 'RECALL',
     );
 
@@ -671,12 +665,12 @@ export class StudySessionsService {
     }
 
     /*
-     * Only after every selected concept has a
-     * complete READY-backed question set do we
-     * create the persistent session snapshot.
+     * Create the persistent session once the FIRST concept has
+     * a complete READY-backed baseline question set.
      *
-     * Therefore a generation failure cannot
-     * create a half-prepared StudySession.
+     * All selected concepts are still snapshotted now, preserving
+     * the stable five-concept session plan. Later concepts are
+     * prepared only when the learner reaches them.
      */
     const session = await this.prisma.$transaction(async (transaction) => {
       const createdSession = await transaction.studySession.create({
@@ -698,7 +692,7 @@ export class StudySessionsService {
       });
 
       await transaction.sessionConceptProgress.createMany({
-        data: preparedConcepts.map((concept, position) => ({
+        data: selectedConcepts.map((concept, position) => ({
           sessionId: createdSession.id,
 
           conceptId: concept.id,
@@ -2295,6 +2289,73 @@ export class StudySessionsService {
       reviewQuestionType,
     });
 
+    /*
+     * Later concepts are intentionally lazy-prepared.
+     *
+     * Determine the next PENDING concept before the transition
+     * transaction and ensure its baseline question bundle exists.
+     *
+     * IMPORTANT:
+     * AI generation must remain outside the Prisma transaction.
+     */
+    const sessionContext = await this.prisma.studySession.findUnique({
+      where: {
+        id: sessionId,
+      },
+
+      select: {
+        studyPackId: true,
+        status: true,
+      },
+    });
+
+    if (!sessionContext) {
+      throw new NotFoundException(
+        `StudySession ${sessionId} was not found`,
+      );
+    }
+
+    if (sessionContext.status !== 'ACTIVE') {
+      throw new BadRequestException(
+        `StudySession ${sessionId} is not ACTIVE`,
+      );
+    }
+
+    const nextPendingConcept =
+      await this.prisma.sessionConceptProgress.findFirst({
+        where: {
+          sessionId,
+          status: 'PENDING',
+        },
+
+        orderBy: {
+          position: 'asc',
+        },
+
+        select: {
+          conceptId: true,
+        },
+      });
+
+    if (nextPendingConcept) {
+      const nextQuestions =
+        await this.ensureConceptQuestionSet(
+          sessionContext.studyPackId,
+          nextPendingConcept.conceptId,
+        );
+
+      const nextRecallQuestion = nextQuestions.find(
+        (question) => question.type === 'RECALL',
+      );
+
+      if (!nextRecallQuestion) {
+        throw new InternalServerErrorException(
+          `Prepared concept ${nextPendingConcept.conceptId} ` +
+            'does not contain a READY RECALL question',
+        );
+      }
+    }
+
     await this.prisma.$transaction(async (transaction) => {
       /*
        * Finish the current concept's initial
@@ -2419,12 +2480,11 @@ export class StudySessionsService {
       }
 
       /*
-       * Every concept included in the session
-       * snapshot had a valid RECALL question at
-       * session creation.
+       * The next concept was lazy-prepared immediately before
+       * this transaction.
        *
-       * Revalidate READY provenance before
-       * presenting it now.
+       * Revalidate READY provenance at the transition boundary
+       * before presenting its RECALL question.
        */
       const recallQuestion = await transaction.question.findFirst({
         where: {
