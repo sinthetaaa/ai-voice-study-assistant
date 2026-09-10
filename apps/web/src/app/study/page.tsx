@@ -12,7 +12,6 @@ import VoiceOrb from "../../components/VoiceOrb";
 
 import {
   AnalysisSource,
-  ConceptGraph,
   QuestionSpeechResult,
   StudyLoopApiError,
   StudyPackCoverage,
@@ -50,8 +49,6 @@ function StudySessionPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [coverage, setCoverage] = useState<StudyPackCoverage | null>(null);
-
-  const [conceptGraph, setConceptGraph] = useState<ConceptGraph | null>(null);
 
   const [view, setView] = useState<StudyView>("question");
 
@@ -97,35 +94,18 @@ function StudySessionPage() {
 
         let coverageState: StudyPackCoverage | null = null;
 
-        let conceptGraphState: ConceptGraph | null = null;
-
-        const [coverageResult, graphResult] = await Promise.allSettled([
-          studyLoopApi.getStudyPackCoverage(state.studyPackId),
-
-          studyLoopApi.getConceptGraph(state.studyPackId),
-        ]);
-
-        if (coverageResult.status === "fulfilled") {
-          coverageState = coverageResult.value;
-        } else {
-          console.warn(
-            "Could not load Study Pack coverage:",
-            coverageResult.reason,
+        try {
+          coverageState = await studyLoopApi.getStudyPackCoverage(
+            state.studyPackId,
           );
-        }
-
-        if (graphResult.status === "fulfilled") {
-          conceptGraphState = graphResult.value;
-        } else {
-          console.warn("Could not load Concept Graph:", graphResult.reason);
+        } catch (coverageError) {
+          console.warn("Could not load Study Pack coverage:", coverageError);
         }
 
         if (!cancelled) {
           setSession(state);
 
           setCoverage(coverageState);
-
-          setConceptGraph(conceptGraphState);
 
           setError(null);
         }
@@ -540,7 +520,6 @@ function StudySessionPage() {
         progress={analysisProgress}
         audioBlocked={analysisAudioBlocked}
         coverage={coverage}
-        conceptGraph={conceptGraph}
         onHearAnalysis={hearBlockedAnalysis}
         onNext={nextQuestion}
         onExit={() => router.push("/")}
@@ -682,9 +661,9 @@ function StudySessionPage() {
             coverageAuthoritative={coverage?.hierarchy.authoritative ?? false}
             coveredCoreConceptCount={coverage?.coveredCoreConceptCount}
             totalCoreConceptCount={coverage?.totalCoreConceptCount}
+            coverageTopics={coverage?.topics ?? []}
             sessionNumber={session.sessionNumber ?? 1}
             currentConceptId={session.currentConcept?.id ?? null}
-            conceptGraph={conceptGraph}
             conceptFlow={session.conceptFlow}
           />
         </div>
@@ -698,7 +677,6 @@ function AnalysisScreen({
   progress,
   audioBlocked,
   coverage,
-  conceptGraph,
   onHearAnalysis,
   onNext,
   onExit,
@@ -710,8 +688,6 @@ function AnalysisScreen({
   audioBlocked: boolean;
 
   coverage: StudyPackCoverage | null;
-
-  conceptGraph: ConceptGraph | null;
 
   onHearAnalysis: () => void;
 
@@ -1151,9 +1127,9 @@ function AnalysisScreen({
             coverageAuthoritative={coverage?.hierarchy.authoritative ?? false}
             coveredCoreConceptCount={coverage?.coveredCoreConceptCount}
             totalCoreConceptCount={coverage?.totalCoreConceptCount}
+            coverageTopics={coverage?.topics ?? []}
             sessionNumber={updatedSession.sessionNumber ?? 1}
             currentConceptId={updatedSession.currentConcept?.id ?? null}
-            conceptGraph={conceptGraph}
             conceptFlow={updatedSession.conceptFlow}
           />
         </div>

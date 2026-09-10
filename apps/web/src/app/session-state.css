@@ -5032,3 +5032,343 @@
     align-self: start !important;
   }
 }
+
+/* =========================================================
+   CURRENT FOCUS + LEARNER CONCEPT MAP V2
+   ========================================================= */
+
+.study-sidebar-final .final-concept-card {
+  position: relative;
+  overflow: visible;
+}
+
+.study-sidebar-final .current-focus-title-row {
+  margin-bottom: 22px;
+}
+
+.study-sidebar-final .current-focus-title-row h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.96);
+}
+
+.study-sidebar-final .current-focus-content {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.study-sidebar-final .current-focus-hierarchy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
+}
+
+.study-sidebar-final .current-focus-topic {
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.46);
+}
+
+.study-sidebar-final .current-focus-core {
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.study-sidebar-final .current-focus-connector {
+  margin-left: 5px;
+  font-size: 10px;
+  line-height: 1;
+  color: rgba(255, 255, 255, 0.26);
+}
+
+.study-sidebar-final .current-focus-hierarchy-status,
+.study-sidebar-final .current-focus-empty,
+.study-sidebar-final .concept-hierarchy-unavailable {
+  margin: 0;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.42);
+}
+
+.study-sidebar-final .current-focus-atomic {
+  padding-top: 15px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.study-sidebar-final .current-focus-atomic-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.study-sidebar-final .current-focus-atomic-row > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.94);
+}
+
+.study-sidebar-final .current-focus-atomic-row > strong {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.86);
+}
+
+.study-sidebar-final .current-focus-metric-label {
+  display: block;
+  margin-top: 8px;
+  font-size: 9px;
+  color: rgba(255, 255, 255, 0.36);
+}
+
+/* ---------------------------------------------------------
+   Secondary concept map control
+   --------------------------------------------------------- */
+
+.study-sidebar-final .concept-hierarchy-details {
+  position: relative;
+  margin-top: 22px;
+}
+
+.study-sidebar-final .concept-hierarchy-details > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 17px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  cursor: pointer;
+  list-style: none;
+  font-size: 10px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.study-sidebar-final .concept-hierarchy-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.study-sidebar-final .concept-hierarchy-summary-icon {
+  font-size: 15px;
+  font-weight: 300;
+  line-height: 1;
+  transition: transform 180ms ease;
+}
+
+.study-sidebar-final
+  .concept-hierarchy-details[open]
+  .concept-hierarchy-summary-icon {
+  transform: rotate(45deg);
+}
+
+/* ---------------------------------------------------------
+   Floating learner hierarchy
+   --------------------------------------------------------- */
+
+.study-sidebar-final .concept-hierarchy-panel {
+  position: absolute;
+  z-index: 140;
+  right: 0;
+  bottom: calc(100% + 14px);
+  width: min(470px, calc(100vw - 48px));
+  max-height: 70vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 22px;
+  box-sizing: border-box;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 20px;
+  background: rgba(7, 8, 9, 0.985);
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.72);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+  overscroll-behavior: contain;
+}
+
+.study-sidebar-final .concept-hierarchy-panel::-webkit-scrollbar {
+  width: 4px;
+}
+
+.study-sidebar-final .concept-hierarchy-panel::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.study-sidebar-final .concept-hierarchy-panel::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.study-sidebar-final .concept-hierarchy-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.study-sidebar-final .concept-hierarchy-header > div {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.study-sidebar-final .concept-hierarchy-header strong {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: rgba(255, 255, 255, 0.96);
+}
+
+.study-sidebar-final .concept-hierarchy-header span {
+  font-size: 9px;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.study-sidebar-final .concept-hierarchy-topic-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.study-sidebar-final .concept-hierarchy-topic {
+  padding: 22px 0;
+}
+
+.study-sidebar-final .concept-hierarchy-topic + .concept-hierarchy-topic {
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.study-sidebar-final .concept-hierarchy-topic:last-child {
+  padding-bottom: 0;
+}
+
+.study-sidebar-final .concept-hierarchy-topic-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 16px;
+}
+
+.study-sidebar-final .concept-hierarchy-topic-heading > strong {
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.94);
+}
+
+.study-sidebar-final .concept-hierarchy-topic-heading > span {
+  font-size: 9px;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.38);
+}
+
+.study-sidebar-final .concept-hierarchy-core-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.study-sidebar-final .concept-hierarchy-core {
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.study-sidebar-final .concept-hierarchy-core-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.study-sidebar-final .concept-hierarchy-core-heading > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.study-sidebar-final .concept-hierarchy-core-heading strong {
+  font-size: 11px;
+  font-weight: 550;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.study-sidebar-final .concept-hierarchy-core-heading > div > span {
+  font-size: 9px;
+  color: rgba(255, 255, 255, 0.38);
+}
+
+.study-sidebar-final .concept-hierarchy-state {
+  flex-shrink: 0;
+  padding: 4px 6px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  font-size: 8px;
+  font-weight: 550;
+  letter-spacing: 0.05em;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.study-sidebar-final .concept-hierarchy-state-covered {
+  color: rgba(255, 255, 255, 0.94);
+  border-color: rgba(255, 255, 255, 0.34);
+}
+
+.study-sidebar-final .concept-hierarchy-state-in-progress {
+  color: rgba(255, 255, 255, 0.74);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.study-sidebar-final .concept-hierarchy-atomic-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 13px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.study-sidebar-final .concept-hierarchy-atomic {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 10px;
+  line-height: 1.4;
+  color: rgba(255, 255, 255, 0.56);
+}
+
+.study-sidebar-final .concept-hierarchy-atomic-marker {
+  flex: 0 0 12px;
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.study-sidebar-final .concept-hierarchy-atomic-marker-tested {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+/* The analysis layout previously clipped the old flow card. */
+.app-page:has(.analysis-dashboard)
+  .study-sidebar-final
+  .final-concept-card {
+  overflow: visible;
+}
+
+@media (max-width: 1180px) {
+  .study-sidebar-final .concept-hierarchy-panel {
+    width: min(390px, calc(100vw - 32px));
+    max-height: 62vh;
+  }
+}

@@ -1,6 +1,4 @@
-import { useRef, type CSSProperties } from "react";
-
-import type { ConceptGraph } from "../lib/studyloop-api";
+import type { StudyPackCoverageTopic } from "../lib/studyloop-api";
 
 type StudySidebarProps = {
   mastery: number;
@@ -16,7 +14,7 @@ type StudySidebarProps = {
 
   currentConceptId?: string | null;
 
-  conceptGraph?: ConceptGraph | null;
+  coverageTopics?: StudyPackCoverageTopic[];
 
   conceptFlow: {
     id: string;
@@ -41,12 +39,26 @@ export default function StudySidebar({
   totalCoreConceptCount,
   sessionNumber = 1,
   currentConceptId,
-  conceptGraph,
+  coverageTopics = [],
   conceptFlow,
 }: StudySidebarProps) {
   const safeMastery = clampPercentage(mastery);
   const safeCoverage = clampPercentage(coverage);
   const displayCoverage = coverageAuthoritative ? safeCoverage : 0;
+
+  const currentSessionConcept =
+    conceptFlow.find((concept) => concept.id === currentConceptId) ??
+    conceptFlow.find((concept) => concept.status === "IN_PROGRESS") ??
+    null;
+
+  const currentHierarchyFocus =
+    coverageAuthoritative && currentSessionConcept
+      ? findHierarchyFocus(coverageTopics, currentSessionConcept.id)
+      : null;
+
+  const currentFocusMastery = currentSessionConcept
+    ? clampPercentage(currentSessionConcept.mastery.score * 100)
+    : 0;
 
   return (
     <aside className="study-sidebar study-sidebar-final">
@@ -106,170 +118,215 @@ export default function StudySidebar({
       </section>
 
       <section className="final-sidebar-card final-concept-card">
-        <div className="concept-flow-title-row">
-          <h3>CONCEPT FLOW</h3>
-
-          <ConceptGraphPopover
-            graph={conceptGraph ?? null}
-            currentConceptId={currentConceptId ?? null}
-            sessionConceptIds={conceptFlow.map((concept) => concept.id)}
-          />
+        <div className="current-focus-title-row">
+          <h3>CURRENT FOCUS</h3>
         </div>
 
-        <div className="final-concept-list">
-          {conceptFlow.map((concept) => {
-            const percentage = clampPercentage(concept.mastery.score * 100);
+        {currentSessionConcept ? (
+          <div className="current-focus-content">
+            {currentHierarchyFocus ? (
+              <div className="current-focus-hierarchy">
+                <span className="current-focus-topic">
+                  {currentHierarchyFocus.topic.name}
+                </span>
 
-            return (
-              <div className="final-concept-item" key={concept.id}>
-                <div className="final-concept-label-row">
-                  <span>{concept.name}</span>
+                <span className="current-focus-connector" aria-hidden="true">
+                  ↓
+                </span>
 
-                  <strong>{Math.round(percentage)}%</strong>
-                </div>
+                <span className="current-focus-core">
+                  {currentHierarchyFocus.coreConcept.name}
+                </span>
 
-                <div
-                  className="final-concept-track"
-                  role="progressbar"
-                  aria-label={`${concept.name} session mastery`}
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-valuenow={Math.round(percentage)}
-                >
-                  <div
-                    className="final-concept-fill"
-                    style={{
-                      width: `${percentage}%`,
-                    }}
-                  />
-                </div>
+                <span className="current-focus-connector" aria-hidden="true">
+                  ↓
+                </span>
               </div>
-            );
-          })}
-        </div>
+            ) : (
+              <span className="current-focus-hierarchy-status">
+                {coverageAuthoritative
+                  ? "Current concept"
+                  : "Concept map updating"}
+              </span>
+            )}
+
+            <div className="current-focus-atomic">
+              <div className="current-focus-atomic-row">
+                <span>{currentSessionConcept.name}</span>
+                <strong>{Math.round(currentFocusMastery)}%</strong>
+              </div>
+
+              <div
+                className="final-concept-track"
+                role="progressbar"
+                aria-label={`${currentSessionConcept.name} session mastery`}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.round(currentFocusMastery)}
+              >
+                <div
+                  className="final-concept-fill"
+                  style={{
+                    width: `${currentFocusMastery}%`,
+                  }}
+                />
+              </div>
+
+              <span className="current-focus-metric-label">
+                Session mastery
+              </span>
+            </div>
+          </div>
+        ) : (
+          <p className="current-focus-empty">
+            No active concept in this session.
+          </p>
+        )}
+
+        <ConceptHierarchyMap
+          topics={coverageTopics}
+          authoritative={coverageAuthoritative}
+        />
       </section>
     </aside>
   );
 }
 
-function ConceptGraphPopover({
-  graph,
-  currentConceptId,
-  sessionConceptIds,
-}: {
-  graph: ConceptGraph | null;
+function findHierarchyFocus(
+  topics: StudyPackCoverageTopic[],
+  atomicConceptId: string,
+) {
+  for (const topic of topics) {
+    for (const coreConcept of topic.coreConcepts) {
+      const atomicConcept = coreConcept.atomicConcepts.find(
+        (concept) => concept.id === atomicConceptId,
+      );
 
-  currentConceptId: string | null;
-
-  sessionConceptIds: string[];
-}) {
-  const flowNodes = buildConceptFlowNodes(graph);
-
-  const flowShellRef = useRef<HTMLSpanElement | null>(null);
-  const currentConceptRef = useRef<HTMLSpanElement | null>(null);
-
-  const centerCurrentConcept = () => {
-    requestAnimationFrame(() => {
-      const shell = flowShellRef.current;
-      const current = currentConceptRef.current;
-
-      if (!shell || !current) {
-        return;
+      if (atomicConcept) {
+        return {
+          topic,
+          coreConcept,
+          atomicConcept,
+        };
       }
+    }
+  }
 
-      const targetTop =
-        current.offsetTop - shell.clientHeight / 2 + current.clientHeight / 2;
+  return null;
+}
 
-      shell.scrollTo({
-        top: Math.max(0, targetTop),
-        behavior: "auto",
-      });
-    });
-  };
+function ConceptHierarchyMap({
+  topics,
+  authoritative,
+}: {
+  topics: StudyPackCoverageTopic[];
+  authoritative: boolean;
+}) {
+  if (!authoritative) {
+    return (
+      <p className="concept-hierarchy-unavailable">Concept map is updating.</p>
+    );
+  }
+
+  if (topics.length === 0) {
+    return (
+      <p className="concept-hierarchy-unavailable">
+        Concept map is not available yet.
+      </p>
+    );
+  }
 
   return (
-    <span
-      className="concept-flow-hover-trigger"
-      onMouseEnter={centerCurrentConcept}
-      onFocusCapture={centerCurrentConcept}
-    >
-      <button
-        type="button"
-        className="final-info-button concept-flow-hover-button"
-        aria-label="Show concept flow"
-      >
-        !
-      </button>
-
-      <span className="concept-flow-hover-panel">
-        <span className="concept-flow-hover-header">
-          <strong>CONCEPT FLOW</strong>
+    <details className="concept-hierarchy-details">
+      <summary>
+        <span>View concept map</span>
+        <span className="concept-hierarchy-summary-icon" aria-hidden="true">
+          +
         </span>
+      </summary>
 
-        {flowNodes.length === 0 ? (
-          <span className="concept-flow-hover-empty">
-            Concept flow is not available yet.
-          </span>
-        ) : (
-          <span className="concept-path-shell" ref={flowShellRef}>
-            <span className="concept-path-fade concept-path-fade-top" />
+      <div className="concept-hierarchy-panel">
+        <div className="concept-hierarchy-header">
+          <div>
+            <strong>STUDY PACK CONCEPT MAP</strong>
+            <span>Topics → Core Concepts → Atomic Concepts</span>
+          </div>
 
-            <span className="concept-path-list">
-              <span className="concept-path-line" />
-              {flowNodes.map((node) => {
-                const isCurrent = node.id === currentConceptId;
+          <span>{topics.length} topics</span>
+        </div>
 
-                const isSessionConcept = sessionConceptIds.includes(node.id);
+        <div className="concept-hierarchy-topic-list">
+          {topics.map((topic) => (
+            <section className="concept-hierarchy-topic" key={topic.id}>
+              <div className="concept-hierarchy-topic-heading">
+                <strong>{topic.name}</strong>
+                {topic.description && <span>{topic.description}</span>}
+              </div>
 
-                return (
-                  <span
-                    key={node.id}
-                    ref={isCurrent ? currentConceptRef : undefined}
-                    className={
-                      isCurrent
-                        ? "concept-path-item concept-path-item-current"
-                        : isSessionConcept
-                          ? "concept-path-item concept-path-item-session"
-                          : "concept-path-item"
-                    }
-                  >
-                    <span className="concept-path-node-wrap">
-                      <span className="concept-path-node" />
-                    </span>
+              <div className="concept-hierarchy-core-list">
+                {topic.coreConcepts.map((coreConcept) => (
+                  <div className="concept-hierarchy-core" key={coreConcept.id}>
+                    <div className="concept-hierarchy-core-heading">
+                      <div>
+                        <strong>{coreConcept.name}</strong>
+                        <span>
+                          {Math.round(coreConcept.coverage.ratio * 100)}%
+                          covered
+                        </span>
+                      </div>
 
-                    <span className="concept-path-copy">
-                      <strong>{node.name}</strong>
+                      <span
+                        className={`concept-hierarchy-state concept-hierarchy-state-${coreConcept.coverage.state
+                          .toLowerCase()
+                          .replace("_", "-")}`}
+                      >
+                        {coverageStateLabel(coreConcept.coverage.state)}
+                      </span>
+                    </div>
 
-                      {isCurrent && <span>CURRENT CONCEPT</span>}
-                    </span>
-                  </span>
-                );
-              })}
-            </span>
+                    <div className="concept-hierarchy-atomic-list">
+                      {coreConcept.atomicConcepts.map((atomicConcept) => (
+                        <div
+                          className="concept-hierarchy-atomic"
+                          key={atomicConcept.id}
+                        >
+                          <span
+                            className={
+                              atomicConcept.tested
+                                ? "concept-hierarchy-atomic-marker concept-hierarchy-atomic-marker-tested"
+                                : "concept-hierarchy-atomic-marker"
+                            }
+                            aria-hidden="true"
+                          >
+                            {atomicConcept.tested ? "✓" : "○"}
+                          </span>
 
-            <span className="concept-path-fade concept-path-fade-bottom" />
-          </span>
-        )}
-      </span>
-    </span>
+                          <span>{atomicConcept.name}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      </div>
+    </details>
   );
 }
 
-function buildConceptFlowNodes(
-  graph: ConceptGraph | null,
-): ConceptGraph["nodes"] {
-  if (!graph || graph.nodes.length === 0) {
-    return [];
-  }
+function coverageStateLabel(state: "UNTOUCHED" | "IN_PROGRESS" | "COVERED") {
+  switch (state) {
+    case "COVERED":
+      return "COVERED";
 
-  /*
-   * Preserve the Study Pack's concept order.
-   *
-   * The current concept is centered when the learner opens
-   * Concept Flow. Earlier concepts therefore remain above it,
-   * while later concepts remain below it.
-   */
-  return graph.nodes;
+    case "IN_PROGRESS":
+      return "IN PROGRESS";
+
+    case "UNTOUCHED":
+      return "UNTOUCHED";
+  }
 }
 
 function MasteryRing({ percentage }: { percentage: number }) {
