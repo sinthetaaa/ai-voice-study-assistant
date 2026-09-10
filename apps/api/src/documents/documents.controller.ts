@@ -51,6 +51,41 @@ export class DocumentsController {
     return new StreamableFile(file.buffer);
   }
 
+  @Get(':documentId/preview')
+  async getDocumentPreview(
+    @Param('studyPackId', new ParseUUIDPipe())
+    studyPackId: string,
+    @Param('documentId', new ParseUUIDPipe())
+    documentId: string,
+    @Res({ passthrough: true })
+    response: Response,
+  ): Promise<StreamableFile> {
+    const file =
+      await this.documentsService.getDocumentPreview(
+        studyPackId,
+        documentId,
+      );
+
+    response.setHeader(
+      'Content-Type',
+      'application/pdf',
+    );
+
+    response.setHeader(
+      'Content-Disposition',
+      `inline; filename*=UTF-8''${encodeURIComponent(
+        file.originalName,
+      )}`,
+    );
+
+    response.setHeader(
+      'Cache-Control',
+      'private, max-age=3600',
+    );
+
+    return new StreamableFile(file.buffer);
+  }
+
   @Post()
   @UseInterceptors(
     FilesInterceptor('files', 10, {

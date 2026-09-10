@@ -1,6 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import {
+  access,
+  mkdir,
+  readFile,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
 import { dirname, extname, join, resolve } from 'node:path';
 
 @Injectable()
@@ -16,7 +22,7 @@ export class LocalStorageService {
       `${randomUUID()}${extension}`,
     );
 
-    const absolutePath = join(this.storageRoot, storageKey);
+    const absolutePath = this.resolveStoragePath(storageKey);
 
     await mkdir(dirname(absolutePath), {
       recursive: true,
@@ -29,17 +35,48 @@ export class LocalStorageService {
     };
   }
 
-  async readDocument(storageKey: string): Promise<Buffer> {
-    const absolutePath = join(this.storageRoot, storageKey);
+  resolveStoragePath(storageKey: string): string {
+    return join(this.storageRoot, storageKey);
+  }
 
-    return readFile(absolutePath);
+  previewStorageKey(storageKey: string): string {
+    return `${storageKey}.preview.pdf`;
+  }
+
+  async exists(storageKey: string): Promise<boolean> {
+    try {
+      await access(this.resolveStoragePath(storageKey));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async readDocument(storageKey: string): Promise<Buffer> {
+    return readFile(this.resolveStoragePath(storageKey));
+  }
+
+  async saveDerivedDocument(
+    storageKey: string,
+    buffer: Buffer,
+  ): Promise<void> {
+    const absolutePath = this.resolveStoragePath(storageKey);
+
+    await mkdir(dirname(absolutePath), {
+      recursive: true,
+    });
+
+    await writeFile(absolutePath, buffer);
   }
 
   async delete(storageKey: string) {
-    const absolutePath = join(this.storageRoot, storageKey);
-
-    await rm(absolutePath, {
-      force: true,
-    });
+    await Promise.allSettled([
+      rm(this.resolveStoragePath(storageKey), {
+        force: true,
+      }),
+      rm(this.resolveStoragePath(this.previewStorageKey(storageKey)), {
+        force: true,
+      }),
+    ]);
   }
 }
