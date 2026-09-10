@@ -2,6 +2,7 @@ import { Controller, Get, Param, Post, Query } from '@nestjs/common';
 
 import {
   ConceptGenerationResult,
+  ConceptHierarchyGenerationResult,
   ConceptPreviewResult,
   ConceptsService,
 } from './concepts.service';
@@ -16,6 +17,16 @@ export class ConceptsController {
     studyPackId: string,
   ) {
     return this.conceptsService.getStudyPackConceptGraph(studyPackId);
+  }
+
+  @Post('hierarchy/generate')
+  async generateConceptHierarchy(
+    @Param('studyPackId')
+    studyPackId: string,
+  ): Promise<ConceptHierarchyGenerationResult> {
+    return this.conceptsService.generateStudyPackHierarchy(
+      studyPackId,
+    );
   }
 
   @Post('preview')

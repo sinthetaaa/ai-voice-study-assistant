@@ -27,6 +27,48 @@ type ConceptApiResponse = {
   }[];
 };
 
+
+export type HierarchyAtomicConcept = {
+  id: string;
+  name: string;
+  description: string;
+  importance: number;
+  difficulty:
+    | 'FOUNDATIONAL'
+    | 'INTERMEDIATE'
+    | 'ADVANCED';
+};
+
+export type GeneratedCoreConcept = {
+  name: string;
+  description: string;
+  importance: number;
+  atomicConceptIds: string[];
+};
+
+export type GeneratedStudyTopic = {
+  name: string;
+  description: string | null;
+  coreConcepts: GeneratedCoreConcept[];
+};
+
+export type GeneratedConceptHierarchy = {
+  topics: GeneratedStudyTopic[];
+};
+
+type ConceptHierarchyApiResponse = {
+  topics: {
+    name: string;
+    description: string | null;
+    core_concepts: {
+      name: string;
+      description: string;
+      importance: number;
+      atomic_concept_ids: string[];
+    }[];
+  }[];
+};
+
 @Injectable()
 export class ConceptAiClientService implements OnModuleDestroy {
   private readonly logger = new Logger(ConceptAiClientService.name);
@@ -165,4 +207,176 @@ export class ConceptAiClientService implements OnModuleDestroy {
 
     return concepts;
   }
+
+  async generateHierarchy(
+    concepts: HierarchyAtomicConcept[],
+  ): Promise<GeneratedConceptHierarchy> {
+    if (concepts.length === 0) {
+      throw new Error(
+        'Cannot generate hierarchy without atomic concepts',
+      );
+    }
+
+    const aiServiceUrl = this.configService
+      .getOrThrow<string>('AI_SERVICE_URL')
+      .replace(/\/$/, '');
+
+    this.logger.log(
+      `Requesting concept hierarchy for ${concepts.length} atomic concepts`,
+    );
+
+    const startedAt = Date.now();
+
+    let response:
+      Awaited<ReturnType<typeof fetch>>;
+
+    try {
+      response = await fetch(
+        `${aiServiceUrl}/concepts/hierarchy`,
+        {
+          method: 'POST',
+          dispatcher: this.aiDispatcher,
+          headers: {
+            'Content-Type':
+              'application/json',
+          },
+          body: JSON.stringify({
+            concepts,
+          }),
+        },
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : String(error);
+
+      throw new Error(
+        'Failed to call concept hierarchy service: ' +
+          message,
+      );
+    }
+
+    this.logger.log(
+      `[StudyLoopTiming] concept hierarchy AI response: ${(
+        (Date.now() - startedAt) /
+        1000
+      ).toFixed(2)}s for ${concepts.length} atomic concepts`,
+    );
+
+    if (!response.ok) {
+      const responseBody =
+        await response.text();
+
+      throw new Error(
+        `Concept hierarchy service returned ${response.status}: ${responseBody}`,
+      );
+    }
+
+    const payload =
+      (await response.json()) as
+        ConceptHierarchyApiResponse;
+
+    if (
+      !payload ||
+      !Array.isArray(payload.topics) ||
+      payload.topics.length === 0
+    ) {
+      throw new Error(
+        'Concept hierarchy service returned an invalid topics payload',
+      );
+    }
+
+    const topics = payload.topics.map(
+      (topic) => {
+        if (
+          typeof topic.name !==
+            'string' ||
+          !topic.name.trim() ||
+          (
+            topic.description !== null &&
+            typeof topic.description !==
+              'string'
+          ) ||
+          !Array.isArray(
+            topic.core_concepts,
+          ) ||
+          topic.core_concepts.length ===
+            0
+        ) {
+          throw new Error(
+            'Concept hierarchy service returned an invalid Study Topic',
+          );
+        }
+
+        const coreConcepts =
+          topic.core_concepts.map(
+            (coreConcept) => {
+              if (
+                typeof coreConcept.name !==
+                  'string' ||
+                !coreConcept.name.trim() ||
+                typeof coreConcept.description !==
+                  'string' ||
+                !coreConcept.description.trim() ||
+                !Number.isInteger(
+                  coreConcept.importance,
+                ) ||
+                coreConcept.importance < 1 ||
+                coreConcept.importance > 5 ||
+                !Array.isArray(
+                  coreConcept
+                    .atomic_concept_ids,
+                ) ||
+                coreConcept
+                  .atomic_concept_ids
+                  .length === 0 ||
+                coreConcept
+                  .atomic_concept_ids
+                  .some(
+                    (conceptId) =>
+                      typeof conceptId !==
+                        'string' ||
+                      !conceptId.trim(),
+                  )
+              ) {
+                throw new Error(
+                  'Concept hierarchy service returned an invalid Core Concept',
+                );
+              }
+
+              return {
+                name: coreConcept.name,
+                description:
+                  coreConcept.description,
+                importance:
+                  coreConcept.importance,
+                /*
+                 * Do NOT deduplicate IDs.
+                 *
+                 * Nest deterministic validation
+                 * must see duplicate membership.
+                 */
+                atomicConceptIds: [
+                  ...coreConcept
+                    .atomic_concept_ids,
+                ],
+              };
+            },
+          );
+
+        return {
+          name: topic.name,
+          description:
+            topic.description,
+          coreConcepts,
+        };
+      },
+    );
+
+    return {
+      topics,
+    };
+  }
+
 }

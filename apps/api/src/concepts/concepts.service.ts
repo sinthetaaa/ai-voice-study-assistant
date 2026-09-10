@@ -12,6 +12,12 @@ import {
   ExtractedConcept,
 } from './concept-ai-client.service';
 
+import {
+  ConceptHierarchyValidationError,
+  PreparedConceptHierarchy,
+  prepareConceptHierarchy,
+} from './concept-hierarchy';
+
 type ConceptChunkRow = {
   id: string;
   text: string;
@@ -42,6 +48,16 @@ export type ConceptGenerationResult = ConceptPreviewResult & {
   scopeDocumentId: string | null;
   persistedConceptCount: number;
   persistedSourceCount: number;
+};
+
+export type ConceptHierarchyGenerationResult = {
+  studyPackId: string;
+
+  atomicConceptCount: number;
+
+  topicCount: number;
+
+  coreConceptCount: number;
 };
 
 @Injectable()
@@ -217,6 +233,318 @@ export class ConceptsService {
 
       persistedSourceCount: persistenceResult.persistedSourceCount,
     };
+  }
+
+  async generateStudyPackHierarchy(
+    studyPackId: string,
+  ): Promise<ConceptHierarchyGenerationResult> {
+    const studyPack =
+      await this.prisma.studyPack.findUnique({
+        where: {
+          id: studyPackId,
+        },
+        select: {
+          id: true,
+        },
+      });
+
+    if (!studyPack) {
+      throw new NotFoundException(
+        `Study Pack ${studyPackId} was not found`,
+      );
+    }
+
+    /*
+     * Only ACTIVE atomic concepts participate in the
+     * learner-facing hierarchy.
+     *
+     * Historical source-less Concept rows remain valid
+     * for attempts/mastery/session history, but should
+     * not inflate current Study Pack structure.
+     */
+    const atomicConcepts =
+      await this.prisma.concept.findMany({
+        where: {
+          studyPackId,
+          sources: {
+            some: {
+              chunk: {
+                unit: {
+                  document: {
+                    status: 'READY',
+                  },
+                },
+              },
+            },
+          },
+        },
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          importance: true,
+          difficulty: true,
+        },
+        orderBy: [
+          {
+            importance: 'desc',
+          },
+          {
+            createdAt: 'asc',
+          },
+        ],
+      });
+
+    if (atomicConcepts.length === 0) {
+      throw new BadRequestException(
+        `Study Pack ${studyPackId} has no active atomic concepts`,
+      );
+    }
+
+    /*
+     * IMPORTANT:
+     *
+     * AI work happens before the Prisma transaction.
+     * Never hold a database transaction open across
+     * an LLM/network request.
+     */
+    const generatedHierarchy =
+      await this.conceptAiClient.generateHierarchy(
+        atomicConcepts,
+      );
+
+    let preparedHierarchy:
+      PreparedConceptHierarchy;
+
+    try {
+      preparedHierarchy =
+        prepareConceptHierarchy(
+          generatedHierarchy,
+          atomicConcepts.map(
+            (concept) => concept.id,
+          ),
+        );
+    } catch (error) {
+      if (
+        error instanceof
+        ConceptHierarchyValidationError
+      ) {
+        throw new BadRequestException(
+          error.message,
+        );
+      }
+
+      throw error;
+    }
+
+    await this.persistStudyPackHierarchy(
+      studyPackId,
+      preparedHierarchy,
+    );
+
+    const coreConceptCount =
+      preparedHierarchy.topics.reduce(
+        (total, topic) =>
+          total +
+          topic.coreConcepts.length,
+        0,
+      );
+
+    return {
+      studyPackId,
+      atomicConceptCount:
+        atomicConcepts.length,
+      topicCount:
+        preparedHierarchy.topics.length,
+      coreConceptCount,
+    };
+  }
+
+  private async persistStudyPackHierarchy(
+    studyPackId: string,
+    hierarchy: PreparedConceptHierarchy,
+  ): Promise<void> {
+    await this.prisma.$transaction(
+      async (transaction) => {
+        /*
+         * Hierarchy refresh is authoritative for the
+         * current Study Pack.
+         *
+         * Detach old hierarchy membership without
+         * touching questions, mastery, provenance,
+         * attempts, or session history.
+         */
+        await transaction.concept.updateMany({
+          where: {
+            studyPackId,
+          },
+          data: {
+            coreConceptId: null,
+            positionInCore: null,
+          },
+        });
+
+        const retainedTopicIds: string[] = [];
+        const retainedCoreConceptIds:
+          string[] = [];
+
+        for (
+          const topic of hierarchy.topics
+        ) {
+          const persistedTopic =
+            await transaction.studyTopic.upsert({
+              where: {
+                studyPackId_normalizedName: {
+                  studyPackId,
+                  normalizedName:
+                    topic.normalizedName,
+                },
+              },
+              update: {
+                name: topic.name,
+                description:
+                  topic.description,
+                position: topic.position,
+              },
+              create: {
+                studyPackId,
+                name: topic.name,
+                normalizedName:
+                  topic.normalizedName,
+                description:
+                  topic.description,
+                position: topic.position,
+              },
+              select: {
+                id: true,
+              },
+            });
+
+          retainedTopicIds.push(
+            persistedTopic.id,
+          );
+
+          for (
+            const coreConcept
+            of topic.coreConcepts
+          ) {
+            const persistedCoreConcept =
+              await transaction
+                .coreConcept.upsert({
+                  where: {
+                    studyPackId_normalizedName:
+                      {
+                        studyPackId,
+                        normalizedName:
+                          coreConcept
+                            .normalizedName,
+                      },
+                  },
+                  update: {
+                    topicId:
+                      persistedTopic.id,
+                    name:
+                      coreConcept.name,
+                    description:
+                      coreConcept.description,
+                    importance:
+                      coreConcept.importance,
+                    position:
+                      coreConcept.position,
+                  },
+                  create: {
+                    studyPackId,
+                    topicId:
+                      persistedTopic.id,
+                    name:
+                      coreConcept.name,
+                    normalizedName:
+                      coreConcept
+                        .normalizedName,
+                    description:
+                      coreConcept.description,
+                    importance:
+                      coreConcept.importance,
+                    position:
+                      coreConcept.position,
+                  },
+                  select: {
+                    id: true,
+                  },
+                });
+
+            retainedCoreConceptIds.push(
+              persistedCoreConcept.id,
+            );
+
+            for (
+              const [
+                atomicPosition,
+                atomicConceptId,
+              ] of coreConcept
+                .atomicConceptIds
+                .entries()
+            ) {
+              /*
+               * Enforce Study Pack ownership at the
+               * database write boundary as well.
+               */
+              const assignment =
+                await transaction
+                  .concept.updateMany({
+                    where: {
+                      id: atomicConceptId,
+                      studyPackId,
+                    },
+                    data: {
+                      coreConceptId:
+                        persistedCoreConcept.id,
+                      positionInCore:
+                        atomicPosition,
+                    },
+                  });
+
+              if (
+                assignment.count !== 1
+              ) {
+                throw new Error(
+                  'Atomic Concept hierarchy assignment ' +
+                    `failed for ${atomicConceptId}`,
+                );
+              }
+            }
+          }
+        }
+
+        /*
+         * Remove hierarchy nodes absent from the
+         * refreshed authoritative hierarchy.
+         *
+         * Atomic Concept rows are never deleted here.
+         */
+        await transaction
+          .coreConcept.deleteMany({
+            where: {
+              studyPackId,
+              id: {
+                notIn:
+                  retainedCoreConceptIds,
+              },
+            },
+          });
+
+        await transaction
+          .studyTopic.deleteMany({
+            where: {
+              studyPackId,
+              id: {
+                notIn:
+                  retainedTopicIds,
+              },
+            },
+          });
+      },
+    );
   }
 
   private async extractStudyPackConcepts(
