@@ -679,8 +679,9 @@ function StudySessionPage() {
           <StudySidebar
             mastery={masteryPercent}
             coverage={coverage?.percentage ?? 0}
-            testedConceptCount={coverage?.testedConceptCount}
-            totalConceptCount={coverage?.totalConceptCount}
+            coverageAuthoritative={coverage?.hierarchy.authoritative ?? false}
+            coveredCoreConceptCount={coverage?.coveredCoreConceptCount}
+            totalCoreConceptCount={coverage?.totalCoreConceptCount}
             sessionNumber={session.sessionNumber ?? 1}
             currentConceptId={session.currentConcept?.id ?? null}
             conceptGraph={conceptGraph}
@@ -1142,14 +1143,14 @@ function AnalysisScreen({
                 onClose={() => setOpenSource(null)}
               />
             )}
-
           </section>
 
           <StudySidebar
             mastery={masteryPercent}
             coverage={coverage?.percentage ?? 0}
-            testedConceptCount={coverage?.testedConceptCount}
-            totalConceptCount={coverage?.totalConceptCount}
+            coverageAuthoritative={coverage?.hierarchy.authoritative ?? false}
+            coveredCoreConceptCount={coverage?.coveredCoreConceptCount}
+            totalCoreConceptCount={coverage?.totalCoreConceptCount}
             sessionNumber={updatedSession.sessionNumber ?? 1}
             currentConceptId={updatedSession.currentConcept?.id ?? null}
             conceptGraph={conceptGraph}
@@ -1233,18 +1234,12 @@ function formatAnalysisDocumentPages(sources: AnalysisSource[]): string {
   return `Pages ${pages[0]}–${pages[pages.length - 1]}`;
 }
 
-
-function getPresentationPreviewPage(
-  source: AnalysisSource,
-): number {
+function getPresentationPreviewPage(source: AnalysisSource): number {
   /*
    * If the backend already exposes a page number,
    * trust it first.
    */
-  if (
-    typeof source.pageNumber === "number" &&
-    source.pageNumber > 0
-  ) {
+  if (typeof source.pageNumber === "number" && source.pageNumber > 0) {
     return source.pageNumber;
   }
 
@@ -1259,10 +1254,7 @@ function getPresentationPreviewPage(
   if (labelMatch) {
     const parsed = Number(labelMatch[1]);
 
-    if (
-      Number.isInteger(parsed) &&
-      parsed > 0
-    ) {
+    if (Number.isInteger(parsed) && parsed > 0) {
       return parsed;
     }
   }
@@ -1274,7 +1266,6 @@ function getPresentationPreviewPage(
    */
   return Math.max(1, source.unitIndex + 1);
 }
-
 
 function SourcePreview({ source }: { source: AnalysisSource }) {
   const sourceUrl = buildAnalysisDocumentUrl(source);
@@ -1358,23 +1349,22 @@ function SourceDocumentModal({
     : sourceUrl.replace(/\/file$/, "/preview");
 
   const previewInitialPage = isPdfSource
-    ? source.pageNumber ?? 1
+    ? (source.pageNumber ?? 1)
     : isPresentationSource
       ? getPresentationPreviewPage(source)
       : 1;
 
-  const previewEvidenceSources =
-    source.evidenceSources.map((evidence) => ({
-      chunkId: evidence.chunkId,
+  const previewEvidenceSources = source.evidenceSources.map((evidence) => ({
+    chunkId: evidence.chunkId,
 
-      pageNumber: isPdfSource
-        ? evidence.pageNumber ?? 1
-        : isPresentationSource
-          ? getPresentationPreviewPage(evidence)
-          : 0,
+    pageNumber: isPdfSource
+      ? (evidence.pageNumber ?? 1)
+      : isPresentationSource
+        ? getPresentationPreviewPage(evidence)
+        : 0,
 
-      excerpt: evidence.excerpt,
-    }));
+    excerpt: evidence.excerpt,
+  }));
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -1433,9 +1423,7 @@ function SourceDocumentModal({
             initialPage={previewInitialPage}
             evidenceSources={previewEvidenceSources}
             studyPoints={studyPoints}
-            autoLocateEvidence={
-              !isPdfSource && !isPresentationSource
-            }
+            autoLocateEvidence={!isPdfSource && !isPresentationSource}
           />
 
           <aside className="analysis-document-evidence analysis-study-guide">

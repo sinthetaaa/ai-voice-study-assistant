@@ -140,20 +140,66 @@ export type ConceptGraph = {
   }[];
 };
 
+export type StudyPackCoverageHierarchy = {
+  status: "DIRTY" | "GENERATING" | "READY" | "FAILED";
+  revision: number;
+  generatedRevision: number | null;
+  authoritative: boolean;
+};
+
+export type StudyPackCoverageAtomicConcept = {
+  id: string;
+  name: string;
+  importance: number;
+  difficulty: "FOUNDATIONAL" | "INTERMEDIATE" | "ADVANCED";
+  position: number | null;
+  tested: boolean;
+  evaluatedNormalAttemptCount: number;
+};
+
+export type StudyPackCoverageCoreConcept = {
+  id: string;
+  name: string;
+  description: string;
+  importance: number;
+  position: number;
+  coverage: {
+    state: "UNTOUCHED" | "IN_PROGRESS" | "COVERED";
+    ratio: number;
+    atomicConceptCount: number;
+    testedAtomicConceptCount: number;
+    untestedAtomicConceptCount: number;
+  };
+  atomicConcepts: StudyPackCoverageAtomicConcept[];
+};
+
+export type StudyPackCoverageTopic = {
+  id: string;
+  name: string;
+  description: string | null;
+  position: number;
+  coreConcepts: StudyPackCoverageCoreConcept[];
+};
+
 export type StudyPackCoverage = {
   studyPackId: string;
 
-  totalConceptCount: number;
+  hierarchy: StudyPackCoverageHierarchy;
 
-  testedConceptCount: number;
+  totalCoreConceptCount: number;
+  coveredCoreConceptCount: number;
+  inProgressCoreConceptCount: number;
+  untouchedCoreConceptCount: number;
 
-  untestedConceptCount: number;
+  totalAtomicConceptCount: number;
+  testedAtomicConceptCount: number;
+  untestedAtomicConceptCount: number;
 
-  conceptRatio: number;
-
+  ratio: number;
   weightedRatio: number;
-
   percentage: number;
+
+  topics: StudyPackCoverageTopic[];
 };
 
 export type StudySession = {

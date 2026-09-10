@@ -7,9 +7,10 @@ type StudySidebarProps = {
 
   coverage: number;
 
-  testedConceptCount?: number;
+  coverageAuthoritative?: boolean;
+  coveredCoreConceptCount?: number;
 
-  totalConceptCount?: number;
+  totalCoreConceptCount?: number;
 
   sessionNumber?: number;
 
@@ -35,8 +36,9 @@ type StudySidebarProps = {
 export default function StudySidebar({
   mastery,
   coverage,
-  testedConceptCount,
-  totalConceptCount,
+  coverageAuthoritative = false,
+  coveredCoreConceptCount,
+  totalCoreConceptCount,
   sessionNumber = 1,
   currentConceptId,
   conceptGraph,
@@ -44,6 +46,7 @@ export default function StudySidebar({
 }: StudySidebarProps) {
   const safeMastery = clampPercentage(mastery);
   const safeCoverage = clampPercentage(coverage);
+  const displayCoverage = coverageAuthoritative ? safeCoverage : 0;
 
   return (
     <aside className="study-sidebar study-sidebar-final">
@@ -73,28 +76,30 @@ export default function StudySidebar({
         </div>
 
         <div className="final-coverage-values">
-          <strong>{Math.round(safeCoverage)}%</strong>
-
-          {typeof testedConceptCount === "number" &&
-            typeof totalConceptCount === "number" && (
+          <strong>
+            {coverageAuthoritative ? `${Math.round(displayCoverage)}%` : "—"}
+          </strong>
+          {coverageAuthoritative &&
+            typeof coveredCoreConceptCount === "number" &&
+            typeof totalCoreConceptCount === "number" && (
               <span>
-                {testedConceptCount} / {totalConceptCount} concepts
+                {coveredCoreConceptCount} / {totalCoreConceptCount} Core
+                Concepts covered
               </span>
             )}
         </div>
-
         <div
           className="final-coverage-track"
           role="progressbar"
           aria-label="Study Pack Coverage"
           aria-valuemin={0}
           aria-valuemax={100}
-          aria-valuenow={Math.round(safeCoverage)}
+          aria-valuenow={Math.round(displayCoverage)}
         >
           <div
             className="final-coverage-fill"
             style={{
-              width: `${safeCoverage}%`,
+              width: `${displayCoverage}%`,
             }}
           />
         </div>
@@ -173,9 +178,7 @@ function ConceptGraphPopover({
       }
 
       const targetTop =
-        current.offsetTop -
-        shell.clientHeight / 2 +
-        current.clientHeight / 2;
+        current.offsetTop - shell.clientHeight / 2 + current.clientHeight / 2;
 
       shell.scrollTo({
         top: Math.max(0, targetTop),
