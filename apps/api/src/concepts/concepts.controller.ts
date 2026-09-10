@@ -23,8 +23,8 @@ export class ConceptsController {
   async generateConceptHierarchy(
     @Param('studyPackId')
     studyPackId: string,
-  ): Promise<ConceptHierarchyGenerationResult> {
-    return this.conceptsService.generateStudyPackHierarchy(
+  ): Promise<ConceptHierarchyGenerationResult | null> {
+    return this.conceptsService.tryGenerateStudyPackHierarchy(
       studyPackId,
     );
   }

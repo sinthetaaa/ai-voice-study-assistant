@@ -528,3 +528,148 @@ describe(
     );
   },
 );
+
+describe(
+  'Concept hierarchy revision guard',
+  () => {
+    it(
+      'marks the claimed revision READY inside the persistence transaction',
+      async () => {
+        const {
+          service,
+          transaction,
+        } = createHarness();
+
+        const hierarchyStateUpdate =
+          jest
+            .fn()
+            .mockResolvedValue({
+              count: 1,
+            });
+
+        Object.assign(
+          transaction,
+          {
+            studyPack: {
+              updateMany:
+                hierarchyStateUpdate,
+            },
+          },
+        );
+
+        await service
+          .generateStudyPackHierarchy(
+            'pack-1',
+            7,
+          );
+
+        expect(
+          hierarchyStateUpdate,
+        ).toHaveBeenCalledTimes(2);
+
+        expect(
+          hierarchyStateUpdate,
+        ).toHaveBeenNthCalledWith(
+          1,
+          {
+            where: {
+              id: 'pack-1',
+              hierarchyStatus:
+                'GENERATING',
+              hierarchyRevision: 7,
+            },
+            data:
+              expect.objectContaining({
+                hierarchyUpdatedAt:
+                  expect.any(Date),
+              }),
+          },
+        );
+
+        expect(
+          hierarchyStateUpdate,
+        ).toHaveBeenNthCalledWith(
+          2,
+          {
+            where: {
+              id: 'pack-1',
+              hierarchyStatus:
+                'GENERATING',
+              hierarchyRevision: 7,
+            },
+            data:
+              expect.objectContaining({
+                hierarchyStatus:
+                  'READY',
+                hierarchyGeneratedRevision:
+                  7,
+                hierarchyErrorMessage:
+                  null,
+                hierarchyUpdatedAt:
+                  expect.any(Date),
+              }),
+          },
+        );
+      },
+    );
+
+    it(
+      'rejects a stale revision before modifying hierarchy membership',
+      async () => {
+        const {
+          service,
+          transaction,
+        } = createHarness();
+
+        const hierarchyStateUpdate =
+          jest
+            .fn()
+            .mockResolvedValue({
+              count: 0,
+            });
+
+        Object.assign(
+          transaction,
+          {
+            studyPack: {
+              updateMany:
+                hierarchyStateUpdate,
+            },
+          },
+        );
+
+        await expect(
+          service
+            .generateStudyPackHierarchy(
+              'pack-1',
+              7,
+            ),
+        ).rejects.toThrow(
+          /became stale/,
+        );
+
+        /*
+         * Revision validation occurs before old
+         * hierarchy membership is detached.
+         */
+        expect(
+          transaction
+            .concept
+            .updateMany,
+        ).not.toHaveBeenCalled();
+
+        expect(
+          transaction
+            .studyTopic
+            .upsert,
+        ).not.toHaveBeenCalled();
+
+        expect(
+          transaction
+            .coreConcept
+            .upsert,
+        ).not.toHaveBeenCalled();
+      },
+    );
+  },
+);

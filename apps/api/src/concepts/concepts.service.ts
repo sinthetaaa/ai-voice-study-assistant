@@ -60,6 +60,21 @@ export type ConceptHierarchyGenerationResult = {
   coreConceptCount: number;
 };
 
+class StaleConceptHierarchyGenerationError extends Error {
+  constructor(
+    studyPackId: string,
+    revision: number,
+  ) {
+    super(
+      `Concept hierarchy generation became stale for ` +
+        `Study Pack ${studyPackId} at revision ${revision}`,
+    );
+
+    this.name =
+      'StaleConceptHierarchyGenerationError';
+  }
+}
+
 @Injectable()
 export class ConceptsService {
   constructor(
@@ -235,8 +250,150 @@ export class ConceptsService {
     };
   }
 
+  async tryGenerateStudyPackHierarchy(
+    studyPackId: string,
+  ): Promise<ConceptHierarchyGenerationResult | null> {
+    /*
+     * Do not generate while any document still has
+     * unfinished atomic-concept processing.
+     *
+     * FAILED is settled: it contributes no new concepts.
+     */
+    const unsettledDocumentCount =
+      await this.prisma.document.count({
+        where: {
+          studyPackId,
+          conceptStatus: {
+            in: [
+              'PENDING',
+              'PROCESSING',
+            ],
+          },
+        },
+      });
+
+    if (unsettledDocumentCount > 0) {
+      return null;
+    }
+
+    const hierarchyState =
+      await this.prisma.studyPack.findUnique({
+        where: {
+          id: studyPackId,
+        },
+        select: {
+          id: true,
+          hierarchyStatus: true,
+          hierarchyRevision: true,
+          hierarchyGeneratedRevision: true,
+        },
+      });
+
+    if (!hierarchyState) {
+      throw new NotFoundException(
+        `Study Pack ${studyPackId} was not found`,
+      );
+    }
+
+    if (
+      hierarchyState.hierarchyStatus === 'READY' &&
+      hierarchyState.hierarchyGeneratedRevision ===
+        hierarchyState.hierarchyRevision
+    ) {
+      return null;
+    }
+
+    if (
+      hierarchyState.hierarchyStatus ===
+      'GENERATING'
+    ) {
+      return null;
+    }
+
+    const revision =
+      hierarchyState.hierarchyRevision;
+
+    /*
+     * Compare-and-set claim.
+     *
+     * At most one worker can claim this exact revision.
+     */
+    const claim =
+      await this.prisma.studyPack.updateMany({
+        where: {
+          id: studyPackId,
+          hierarchyRevision: revision,
+          hierarchyStatus: {
+            in: [
+              'DIRTY',
+              'FAILED',
+            ],
+          },
+        },
+        data: {
+          hierarchyStatus:
+            'GENERATING',
+          hierarchyErrorMessage:
+            null,
+          hierarchyUpdatedAt:
+            new Date(),
+        },
+      });
+
+    if (claim.count !== 1) {
+      return null;
+    }
+
+    try {
+      return await this.generateStudyPackHierarchy(
+        studyPackId,
+        revision,
+      );
+    } catch (error) {
+      /*
+       * A newer atomic-concept mutation can invalidate
+       * this generation while its LLM request is running.
+       */
+      if (
+        error instanceof
+        StaleConceptHierarchyGenerationError
+      ) {
+        return null;
+      }
+
+      const message =
+        error instanceof Error
+          ? error.message
+          : String(error);
+
+      /*
+       * Fail only the revision still owned by this worker.
+       * If a newer revision exists, this affects zero rows.
+       */
+      await this.prisma.studyPack.updateMany({
+        where: {
+          id: studyPackId,
+          hierarchyRevision: revision,
+          hierarchyStatus:
+            'GENERATING',
+        },
+        data: {
+          hierarchyStatus:
+            'FAILED',
+          hierarchyErrorMessage:
+            message,
+          hierarchyUpdatedAt:
+            new Date(),
+        },
+      });
+
+      throw error;
+    }
+  }
+
   async generateStudyPackHierarchy(
     studyPackId: string,
+    expectedRevision?: number,
   ): Promise<ConceptHierarchyGenerationResult> {
     const studyPack =
       await this.prisma.studyPack.findUnique({
@@ -340,6 +497,7 @@ export class ConceptsService {
     await this.persistStudyPackHierarchy(
       studyPackId,
       preparedHierarchy,
+      expectedRevision,
     );
 
     const coreConceptCount =
@@ -363,9 +521,48 @@ export class ConceptsService {
   private async persistStudyPackHierarchy(
     studyPackId: string,
     hierarchy: PreparedConceptHierarchy,
+    expectedRevision?: number,
   ): Promise<void> {
     await this.prisma.$transaction(
       async (transaction) => {
+
+        /*
+         * Revision guard before hierarchy writes.
+         *
+         * Updating the StudyPack row acquires the row
+         * lock for this hierarchy revision.
+         *
+         * If atomic concepts changed while the LLM was
+         * running, hierarchyRevision will no longer match
+         * and this stale hierarchy must be discarded.
+         */
+        if (
+          expectedRevision !==
+          undefined
+        ) {
+          const guard =
+            await transaction.studyPack.updateMany({
+              where: {
+                id: studyPackId,
+                hierarchyStatus:
+                  'GENERATING',
+                hierarchyRevision:
+                  expectedRevision,
+              },
+              data: {
+                hierarchyUpdatedAt:
+                  new Date(),
+              },
+            });
+
+          if (guard.count !== 1) {
+            throw new StaleConceptHierarchyGenerationError(
+              studyPackId,
+              expectedRevision,
+            );
+          }
+        }
+
         /*
          * Hierarchy refresh is authoritative for the
          * current Study Pack.
@@ -543,6 +740,44 @@ export class ConceptsService {
               },
             },
           });
+
+        /*
+         * Complete the exact claimed revision in the same
+         * transaction as Topic/Core membership persistence.
+         */
+        if (
+          expectedRevision !==
+          undefined
+        ) {
+          const completed =
+            await transaction.studyPack.updateMany({
+              where: {
+                id: studyPackId,
+                hierarchyStatus:
+                  'GENERATING',
+                hierarchyRevision:
+                  expectedRevision,
+              },
+              data: {
+                hierarchyStatus:
+                  'READY',
+                hierarchyGeneratedRevision:
+                  expectedRevision,
+                hierarchyErrorMessage:
+                  null,
+                hierarchyUpdatedAt:
+                  new Date(),
+              },
+            });
+
+          if (completed.count !== 1) {
+            throw new StaleConceptHierarchyGenerationError(
+              studyPackId,
+              expectedRevision,
+            );
+          }
+        }
+
       },
     );
   }
@@ -661,6 +896,36 @@ export class ConceptsService {
     const scopeChunkIds = chunks.map((chunk) => chunk.id);
 
     await this.prisma.$transaction(async (transaction) => {
+      /*
+       * This transaction changes active atomic
+       * concepts/provenance.
+       *
+       * Lock StudyPack first so hierarchy persistence
+       * and concept persistence use the same lock order.
+       *
+       * Incrementing the revision invalidates any
+       * hierarchy LLM generation currently in flight.
+       *
+       * If later persistence fails, this update rolls
+       * back with the rest of this transaction.
+       */
+      await transaction.studyPack.update({
+        where: {
+          id: studyPackId,
+        },
+        data: {
+          hierarchyStatus:
+            'DIRTY',
+          hierarchyRevision: {
+            increment: 1,
+          },
+          hierarchyErrorMessage:
+            null,
+          hierarchyUpdatedAt:
+            new Date(),
+        },
+      });
+
       /*
        * IMPORTANT:
        *
@@ -833,6 +1098,9 @@ export class ConceptsService {
           },
         },
       });
+
+
+
     });
 
     /*
