@@ -563,6 +563,13 @@ function StudySessionPage() {
 
         <div className="study-page-layout">
           <section className="question-panel">
+            {session.kind === "NORMAL" && (
+              <NormalSessionProgress
+                sessionNumber={session.sessionNumber ?? 1}
+                progress={session.progress}
+              />
+            )}
+
             <div className="question-header">
               <div>
                 <p className="section-kicker">TOPIC</p>
@@ -1898,6 +1905,96 @@ function SessionFailure({
         </div>
       </div>
     </main>
+  );
+}
+
+function NormalSessionProgress({
+  sessionNumber,
+  progress,
+}: {
+  sessionNumber: number;
+  progress: StudySession["progress"];
+}) {
+  const answeredQuestionCount = Math.max(0, progress.answeredQuestionCount);
+
+  const targetQuestionCount = Math.max(0, progress.targetQuestionCount);
+
+  const maximumQuestionCount = Math.max(1, progress.maximumQuestionCount);
+
+  const answeredPercent = Math.min(
+    100,
+    (answeredQuestionCount / maximumQuestionCount) * 100,
+  );
+
+  const targetPercent = Math.min(
+    100,
+    Math.max(0, (targetQuestionCount / maximumQuestionCount) * 100),
+  );
+
+  const currentQuestionNumber = Math.min(
+    maximumQuestionCount,
+    answeredQuestionCount + 1,
+  );
+
+  let progressCopy = `${answeredQuestionCount} answered · ${targetQuestionCount} target`;
+
+  if (progress.maximumReached) {
+    progressCopy = `${answeredQuestionCount} answered · Session limit reached`;
+  } else if (
+    progress.targetReached &&
+    answeredQuestionCount > targetQuestionCount
+  ) {
+    progressCopy = `${answeredQuestionCount} answered · Adaptive practice`;
+  } else if (progress.targetReached) {
+    progressCopy = `${answeredQuestionCount} answered · Target reached`;
+  }
+
+  return (
+    <section
+      className="normal-session-progress"
+      aria-label="Normal Study session progress"
+    >
+      <div className="normal-session-progress-topline">
+        <span>SESSION {String(sessionNumber).padStart(2, "0")}</span>
+
+        <span>QUESTION {String(currentQuestionNumber).padStart(2, "0")}</span>
+      </div>
+
+      <div className="normal-session-progress-heading">
+        <strong>SESSION PROGRESS</strong>
+        <span>{progressCopy}</span>
+      </div>
+
+      <div
+        className="normal-session-progress-track"
+        role="progressbar"
+        aria-label="Answered questions in this study session"
+        aria-valuemin={0}
+        aria-valuemax={maximumQuestionCount}
+        aria-valuenow={Math.min(answeredQuestionCount, maximumQuestionCount)}
+        aria-valuetext={`${answeredQuestionCount} answered, target ${targetQuestionCount}, maximum ${maximumQuestionCount}`}
+      >
+        <span
+          className="normal-session-progress-fill"
+          style={{
+            width: `${answeredPercent}%`,
+          }}
+        />
+
+        <span
+          className="normal-session-target-marker"
+          style={{
+            left: `${targetPercent}%`,
+          }}
+          aria-hidden="true"
+        />
+      </div>
+
+      <div className="normal-session-progress-scale">
+        <span>TARGET {targetQuestionCount}</span>
+        <span>MAX {maximumQuestionCount}</span>
+      </div>
+    </section>
   );
 }
 

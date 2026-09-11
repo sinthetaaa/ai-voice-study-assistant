@@ -221,10 +221,16 @@ export type StudySession = {
 
   progress: {
     completedConceptCount: number;
-
     reviewRequiredCount: number;
-
     remainingConceptCount: number;
+
+    answeredQuestionCount: number;
+    targetQuestionCount: number;
+    maximumQuestionCount: number;
+    remainingToTarget: number;
+    remainingToMaximum: number;
+    targetReached: boolean;
+    maximumReached: boolean;
   };
 
   currentConcept: SessionConcept | null;
