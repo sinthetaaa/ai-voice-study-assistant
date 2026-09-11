@@ -532,7 +532,9 @@ function StudySessionPage() {
     !session.currentConcept ||
     !session.currentQuestion
   ) {
-    return <SessionComplete onHome={() => router.push("/")} />;
+    return (
+      <SessionComplete session={session} onHome={() => router.push("/")} />
+    );
   }
 
   const masteryPercent = session.currentConcept.mastery.score * 100;
@@ -903,7 +905,7 @@ function AnalysisScreen({
                 <button
                   className="next-button analysis-next-button analysis-top-next-button"
                   disabled={!analysisFinished}
-                  onClick={hasNextQuestion ? onNext : onExit}
+                  onClick={onNext}
                 >
                   {hasNextQuestion ? "Next Question" : "Finish Session"}
                   <ArrowIcon />
@@ -1924,7 +1926,7 @@ function NormalSessionProgress({
 }: {
   sessionNumber: number;
   progress: StudySession["progress"];
-  phase?: "question" | "analysis";
+  phase?: "question" | "analysis" | "complete";
 }) {
   const answeredQuestionCount = Math.max(0, progress.answeredQuestionCount);
 
@@ -1943,14 +1945,16 @@ function NormalSessionProgress({
   );
 
   const displayedQuestionNumber =
-    phase === "analysis"
-      ? Math.max(1, Math.min(maximumQuestionCount, answeredQuestionCount))
-      : Math.min(maximumQuestionCount, answeredQuestionCount + 1);
+    phase === "question"
+      ? Math.min(maximumQuestionCount, answeredQuestionCount + 1)
+      : Math.max(1, Math.min(maximumQuestionCount, answeredQuestionCount));
 
   const questionStatusLabel =
-    phase === "analysis"
-      ? `QUESTION ${String(displayedQuestionNumber).padStart(2, "0")} COMPLETE`
-      : `QUESTION ${String(displayedQuestionNumber).padStart(2, "0")}`;
+    phase === "complete"
+      ? "SESSION COMPLETE"
+      : phase === "analysis"
+        ? `QUESTION ${String(displayedQuestionNumber).padStart(2, "0")} COMPLETE`
+        : `QUESTION ${String(displayedQuestionNumber).padStart(2, "0")}`;
 
   let progressCopy = `${answeredQuestionCount} answered · ${targetQuestionCount} target`;
 
@@ -2014,21 +2018,179 @@ function NormalSessionProgress({
   );
 }
 
-function SessionComplete({ onHome }: { onHome: () => void }) {
+function SessionComplete({
+  session,
+  onHome,
+}: {
+  session: StudySession;
+  onHome: () => void;
+}) {
+  /*
+   * Phase 3 is specifically the bounded Normal Study
+   * experience. Preserve the lightweight result for REVIEW
+   * sessions until Review V2 gets its own completion design.
+   */
+  if (session.kind !== "NORMAL") {
+    return (
+      <main className="app-page">
+        <div className="app-background" />
+
+        <div className="app-shell">
+          <div className="session-complete-state">
+            <p className="section-kicker">SESSION COMPLETE</p>
+
+            <h1>Review session complete.</h1>
+
+            <button className="primary-pill" onClick={onHome}>
+              Back Home
+            </button>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  const {
+    answeredQuestionCount,
+    targetQuestionCount,
+    maximumQuestionCount,
+    targetReached,
+    maximumReached,
+  } = session.progress;
+
+  const completedConceptCount = session.progress.completedConceptCount;
+
+  const reviewRequiredCount = session.progress.reviewRequiredCount;
+
+  let completionCopy = "This sitting is finished.";
+
+  if (maximumReached) {
+    completionCopy =
+      "You reached the session limit. Your progress has been saved.";
+  } else if (targetReached && answeredQuestionCount > targetQuestionCount) {
+    completionCopy = "You completed the target plus adaptive practice.";
+  } else if (targetReached) {
+    completionCopy = "You completed the planned session target.";
+  }
+
   return (
-    <main className="app-page">
+    <main className="app-page session-result-page">
       <div className="app-background" />
 
       <div className="app-shell">
-        <div className="session-complete-state">
-          <p className="section-kicker">SESSION COMPLETE</p>
-
-          <h1>Study session complete.</h1>
-
-          <button className="primary-pill" onClick={onHome}>
-            Back Home
+        <header className="app-header">
+          <button className="wordmark" onClick={onHome}>
+            StudyLoop
           </button>
-        </div>
+        </header>
+
+        <section className="session-result">
+          <div className="session-result-hero">
+            <p className="section-kicker">
+              SESSION {String(session.sessionNumber ?? 1).padStart(2, "0")}{" "}
+              COMPLETE
+            </p>
+
+            <h1>Nice work.</h1>
+
+            <p>{completionCopy}</p>
+          </div>
+
+          <div className="session-result-metrics">
+            <div className="session-result-metric">
+              <strong>{answeredQuestionCount}</strong>
+              <span>QUESTIONS ANSWERED</span>
+            </div>
+
+            <div className="session-result-metric">
+              <strong>
+                {completedConceptCount}
+                <span> / {session.conceptCount}</span>
+              </strong>
+              <span>SESSION CONCEPTS COMPLETED</span>
+            </div>
+
+            <div className="session-result-metric">
+              <strong>{reviewRequiredCount}</strong>
+              <span>NEED REVIEW</span>
+            </div>
+          </div>
+
+          <div className="session-result-progress">
+            <NormalSessionProgress
+              sessionNumber={session.sessionNumber ?? 1}
+              progress={session.progress}
+              phase="complete"
+            />
+          </div>
+
+          <section className="session-result-concepts">
+            <div className="session-result-section-heading">
+              <div>
+                <p className="section-kicker">CONCEPT RESULTS</p>
+                <h2>How this sitting ended</h2>
+              </div>
+
+              <span>
+                Target {targetQuestionCount} · Max {maximumQuestionCount}
+              </span>
+            </div>
+
+            <div className="session-result-concept-list">
+              {session.conceptFlow.map((concept) => {
+                const mastery = Math.max(
+                  0,
+                  Math.min(100, concept.mastery.score * 100),
+                );
+
+                const status =
+                  concept.reviewRequired || concept.status === "REVIEW_REQUIRED"
+                    ? "NEEDS REVIEW"
+                    : concept.status === "COMPLETED"
+                      ? "COMPLETE"
+                      : "INCOMPLETE";
+
+                return (
+                  <div className="session-result-concept" key={concept.id}>
+                    <div className="session-result-concept-topline">
+                      <div>
+                        <strong>{concept.name}</strong>
+                        <span>{status}</span>
+                      </div>
+
+                      <strong>{Math.round(mastery)}%</strong>
+                    </div>
+
+                    <div
+                      className="session-result-concept-track"
+                      role="progressbar"
+                      aria-label={`${concept.name} session mastery`}
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-valuenow={Math.round(mastery)}
+                    >
+                      <span
+                        style={{
+                          width: `${mastery}%`,
+                        }}
+                      />
+                    </div>
+
+                    <span className="session-result-mastery-label">
+                      Session mastery
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+
+          <div className="session-result-actions">
+            <button className="primary-pill" onClick={onHome}>
+              Back Home
+            </button>
+          </div>
+        </section>
       </div>
     </main>
   );
