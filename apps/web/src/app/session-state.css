@@ -5472,3 +5472,113 @@
     text-align: left;
   }
 }
+
+/* =========================================================
+   ANSWER ANALYSIS SESSION PROGRESS V2
+   ========================================================= */
+
+.analysis-dashboard .analysis-dashboard-topbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "analysis-summary analysis-actions"
+    "analysis-progress analysis-progress";
+  column-gap: 20px;
+  row-gap: 12px;
+}
+
+.analysis-dashboard .analysis-dashboard-topbar > div:first-child {
+  grid-area: analysis-summary;
+  min-width: 0;
+}
+
+.analysis-dashboard .analysis-topbar-actions {
+  grid-area: analysis-actions;
+}
+
+.analysis-dashboard .analysis-session-progress {
+  grid-area: analysis-progress;
+  min-width: 0;
+}
+
+.analysis-dashboard
+  .analysis-session-progress
+  .normal-session-progress {
+  margin: 0;
+  padding: 11px 0 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.075);
+  border-bottom: 0;
+}
+
+.analysis-dashboard
+  .analysis-session-progress
+  .normal-session-progress-topline {
+  margin-bottom: 7px;
+}
+
+.analysis-dashboard
+  .analysis-session-progress
+  .normal-session-progress-topline
+  > span {
+  font-size: 8px;
+}
+
+.analysis-dashboard
+  .analysis-session-progress
+  .normal-session-progress-heading {
+  margin-bottom: 7px;
+}
+
+.analysis-dashboard
+  .analysis-session-progress
+  .normal-session-progress-heading
+  > strong {
+  font-size: 9px;
+}
+
+.analysis-dashboard
+  .analysis-session-progress
+  .normal-session-progress-heading
+  > span {
+  font-size: 9px;
+}
+
+.analysis-dashboard
+  .analysis-session-progress
+  .normal-session-progress-track {
+  height: 5px;
+}
+
+.analysis-dashboard
+  .analysis-session-progress
+  .normal-session-target-marker {
+  top: -3px;
+  height: 11px;
+}
+
+.analysis-dashboard
+  .analysis-session-progress
+  .normal-session-progress-scale {
+  margin-top: 5px;
+}
+
+.analysis-dashboard
+  .analysis-session-progress
+  .normal-session-progress-scale
+  > span {
+  font-size: 7px;
+}
+
+@media (max-width: 1080px) {
+  .analysis-dashboard .analysis-dashboard-topbar {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "analysis-summary"
+      "analysis-progress"
+      "analysis-actions";
+  }
+
+  .analysis-dashboard .analysis-topbar-actions {
+    justify-self: stretch;
+  }
+}

@@ -909,6 +909,15 @@ function AnalysisScreen({
                   <ArrowIcon />
                 </button>
               </div>
+              {updatedSession.kind === "NORMAL" && (
+                <div className="analysis-session-progress">
+                  <NormalSessionProgress
+                    sessionNumber={updatedSession.sessionNumber ?? 1}
+                    progress={updatedSession.progress}
+                    phase="analysis"
+                  />
+                </div>
+              )}
             </div>
 
             <div className="analysis-metric-grid">
@@ -1911,9 +1920,11 @@ function SessionFailure({
 function NormalSessionProgress({
   sessionNumber,
   progress,
+  phase = "question",
 }: {
   sessionNumber: number;
   progress: StudySession["progress"];
+  phase?: "question" | "analysis";
 }) {
   const answeredQuestionCount = Math.max(0, progress.answeredQuestionCount);
 
@@ -1931,10 +1942,15 @@ function NormalSessionProgress({
     Math.max(0, (targetQuestionCount / maximumQuestionCount) * 100),
   );
 
-  const currentQuestionNumber = Math.min(
-    maximumQuestionCount,
-    answeredQuestionCount + 1,
-  );
+  const displayedQuestionNumber =
+    phase === "analysis"
+      ? Math.max(1, Math.min(maximumQuestionCount, answeredQuestionCount))
+      : Math.min(maximumQuestionCount, answeredQuestionCount + 1);
+
+  const questionStatusLabel =
+    phase === "analysis"
+      ? `QUESTION ${String(displayedQuestionNumber).padStart(2, "0")} COMPLETE`
+      : `QUESTION ${String(displayedQuestionNumber).padStart(2, "0")}`;
 
   let progressCopy = `${answeredQuestionCount} answered · ${targetQuestionCount} target`;
 
@@ -1957,7 +1973,7 @@ function NormalSessionProgress({
       <div className="normal-session-progress-topline">
         <span>SESSION {String(sessionNumber).padStart(2, "0")}</span>
 
-        <span>QUESTION {String(currentQuestionNumber).padStart(2, "0")}</span>
+        <span>{questionStatusLabel}</span>
       </div>
 
       <div className="normal-session-progress-heading">
