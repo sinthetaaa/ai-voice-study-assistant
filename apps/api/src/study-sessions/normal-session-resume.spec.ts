@@ -143,6 +143,55 @@ describe('StudySessionsService normal session resume', () => {
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
+  it('finalizes a legacy ACTIVE Normal session at the hard cap before starting the next sitting', async () => {
+    const prisma = {
+      studySession: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'session-maxed',
+        }),
+      },
+    };
+
+    const service = new StudySessionsService(prisma, {}, {}, {});
+
+    const maxedState = makeActiveSessionState('session-maxed');
+
+    maxedState.progress = {
+      ...maxedState.progress,
+      answeredQuestionCount: 25,
+      remainingToTarget: 0,
+      remainingToMaximum: 0,
+      targetReached: true,
+      maximumReached: true,
+    };
+
+    jest.spyOn(service, 'getSessionState').mockResolvedValue(maxedState);
+
+    const completeAtLimit = jest
+      .spyOn(service as any, 'completeNormalSessionAtQuestionLimit')
+      .mockResolvedValue(undefined);
+
+    const freshState = makeActiveSessionState('session-fresh');
+
+    freshState.sessionNumber = 5;
+
+    const createNormalSession = jest
+      .spyOn(service as any, 'createNormalSession')
+      .mockResolvedValue(freshState);
+
+    const result = await service.startSession('pack-1');
+
+    expect(completeAtLimit).toHaveBeenCalledWith(
+      'session-maxed',
+      'concept-1',
+      'UNDERSTANDING',
+    );
+
+    expect(createNormalSession).toHaveBeenCalledWith('pack-1');
+
+    expect(result.sessionId).toBe('session-fresh');
+  });
+
   it('recovers from a concurrent P2002 start by resuming the winning session', async () => {
     const concepts = [
       makeConcept(1),

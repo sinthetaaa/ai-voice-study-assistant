@@ -511,6 +511,26 @@ export class StudySessionsService {
       );
     }
 
+    /*
+     * Legacy ACTIVE Normal sessions may predate the
+     * bounded-session policy and already contain 20+
+     * evaluated attempts.
+     *
+     * Such a sitting is no longer resumable. Finalize it
+     * through the same hard-boundary path used by current
+     * Question 20 handling, then allow startSession() to
+     * create the next Normal sitting.
+     */
+    if (state.progress.maximumReached) {
+      await this.completeNormalSessionAtQuestionLimit(
+        existingSession.id,
+        state.currentConcept.id,
+        state.currentQuestion.type,
+      );
+
+      return null;
+    }
+
     return {
       ...state,
       currentConcept: state.currentConcept,
