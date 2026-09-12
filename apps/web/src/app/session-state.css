@@ -5834,3 +5834,126 @@
     justify-content: center;
   }
 }
+
+/* =========================================================
+   SIDEBAR SESSION PROGRESS V2
+   ========================================================= */
+
+.study-sidebar-final .final-session-progress-card {
+  padding: 22px;
+}
+
+.study-sidebar-final .final-session-progress-values {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 27px;
+}
+
+.study-sidebar-final .final-session-progress-values > strong {
+  font-size: 34px;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  color: rgba(255, 255, 255, 0.97);
+}
+
+.study-sidebar-final .final-session-progress-values > span {
+  padding-bottom: 3px;
+  font-size: 11px;
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.48);
+  text-align: right;
+}
+
+.study-sidebar-final .final-session-progress-track {
+  position: relative;
+  width: 100%;
+  height: 9px;
+  margin-top: 27px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.study-sidebar-final .final-session-progress-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: inherit;
+  background: rgba(255, 255, 255, 0.96);
+  transition: width 550ms ease;
+}
+
+.study-sidebar-final .final-session-progress-target {
+  position: absolute;
+  z-index: 2;
+  top: -4px;
+  width: 1px;
+  height: 17px;
+  transform: translateX(-1px);
+  background: rgba(255, 255, 255, 0.68);
+}
+
+.study-sidebar-final .final-session-progress-scale {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 9px;
+}
+
+.study-sidebar-final .final-session-progress-scale > span {
+  font-size: 8px;
+  font-weight: 500;
+  letter-spacing: 0.07em;
+  color: rgba(255, 255, 255, 0.32);
+}
+
+/*
+ * Answer Analysis uses the same session semantics, but
+ * keeps the sidebar compact for its denser layout.
+ */
+.app-page:has(.analysis-dashboard)
+  .study-sidebar-final
+  .final-session-progress-card {
+  padding: 15px 16px;
+}
+
+.app-page:has(.analysis-dashboard)
+  .study-sidebar-final
+  .final-session-progress-values {
+  margin-top: 12px;
+}
+
+.app-page:has(.analysis-dashboard)
+  .study-sidebar-final
+  .final-session-progress-values
+  > strong {
+  font-size: 26px;
+}
+
+.app-page:has(.analysis-dashboard)
+  .study-sidebar-final
+  .final-session-progress-values
+  > span {
+  font-size: 9px;
+}
+
+.app-page:has(.analysis-dashboard)
+  .study-sidebar-final
+  .final-session-progress-track {
+  height: 7px;
+  margin-top: 12px;
+}
+
+.app-page:has(.analysis-dashboard)
+  .study-sidebar-final
+  .final-session-progress-target {
+  top: -3px;
+  height: 13px;
+}
+
+.app-page:has(.analysis-dashboard)
+  .study-sidebar-final
+  .final-session-progress-scale {
+  margin-top: 6px;
+}

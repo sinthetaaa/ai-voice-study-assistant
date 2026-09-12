@@ -1,7 +1,10 @@
-import type { StudyPackCoverageTopic } from "../lib/studyloop-api";
+import type {
+  StudyPackCoverageTopic,
+  StudySession,
+} from "../lib/studyloop-api";
 
 type StudySidebarProps = {
-  mastery: number;
+  sessionProgress?: StudySession["progress"] | null;
 
   coverage: number;
 
@@ -32,7 +35,7 @@ type StudySidebarProps = {
 };
 
 export default function StudySidebar({
-  mastery,
+  sessionProgress = null,
   coverage,
   coverageAuthoritative = false,
   coveredCoreConceptCount,
@@ -42,8 +45,46 @@ export default function StudySidebar({
   coverageTopics = [],
   conceptFlow,
 }: StudySidebarProps) {
-  const safeMastery = clampPercentage(mastery);
   const safeCoverage = clampPercentage(coverage);
+
+  const answeredQuestionCount = Math.max(
+    0,
+    sessionProgress?.answeredQuestionCount ?? 0,
+  );
+
+  const targetQuestionCount = Math.max(
+    0,
+    sessionProgress?.targetQuestionCount ?? 0,
+  );
+
+  const maximumQuestionCount = Math.max(
+    1,
+    sessionProgress?.maximumQuestionCount ?? 1,
+  );
+
+  const sessionProgressPercent = Math.min(
+    100,
+    (answeredQuestionCount / maximumQuestionCount) * 100,
+  );
+
+  const sessionTargetPercent = Math.min(
+    100,
+    Math.max(0, (targetQuestionCount / maximumQuestionCount) * 100),
+  );
+
+  let sessionProgressStatus = `${sessionProgress?.remainingToTarget ?? 0} to target`;
+
+  if (sessionProgress?.maximumReached) {
+    sessionProgressStatus = "Session limit reached";
+  } else if (
+    sessionProgress?.targetReached &&
+    answeredQuestionCount > targetQuestionCount
+  ) {
+    sessionProgressStatus = "Adaptive practice";
+  } else if (sessionProgress?.targetReached) {
+    sessionProgressStatus = "Target reached";
+  }
+
   const displayCoverage = coverageAuthoritative ? safeCoverage : 0;
 
   const currentSessionConcept =
@@ -62,21 +103,59 @@ export default function StudySidebar({
 
   return (
     <aside className="study-sidebar study-sidebar-final">
-      <section className="final-sidebar-card final-mastery-card">
-        <div className="final-card-header">
-          <div className="final-title-with-info">
-            <span>SESSION MASTERY</span>
+      {sessionProgress && (
+        <section className="final-sidebar-card final-session-progress-card">
+          <div className="final-card-header">
+            <div className="final-title-with-info">
+              <span>SESSION PROGRESS</span>
 
-            <InfoHint text="Measures what you have demonstrated in this study session." />
+              <InfoHint text="Tracks progress through this bounded Normal Study sitting. Adaptive practice may continue beyond the target, up to the session maximum." />
+            </div>
+
+            <span className="final-session-number">
+              Session {String(sessionNumber).padStart(2, "0")}
+            </span>
           </div>
 
-          <span className="final-session-number">
-            Session {String(sessionNumber).padStart(2, "0")}
-          </span>
-        </div>
+          <div className="final-session-progress-values">
+            <strong>{answeredQuestionCount}</strong>
+            <span>{sessionProgressStatus}</span>
+          </div>
 
-        <MasteryRing percentage={safeMastery} />
-      </section>
+          <div
+            className="final-session-progress-track"
+            role="progressbar"
+            aria-label="Normal Study session progress"
+            aria-valuemin={0}
+            aria-valuemax={maximumQuestionCount}
+            aria-valuenow={Math.min(
+              answeredQuestionCount,
+              maximumQuestionCount,
+            )}
+            aria-valuetext={`${answeredQuestionCount} answered, target ${targetQuestionCount}, maximum ${maximumQuestionCount}`}
+          >
+            <span
+              className="final-session-progress-fill"
+              style={{
+                width: `${sessionProgressPercent}%`,
+              }}
+            />
+
+            <span
+              className="final-session-progress-target"
+              style={{
+                left: `${sessionTargetPercent}%`,
+              }}
+              aria-hidden="true"
+            />
+          </div>
+
+          <div className="final-session-progress-scale">
+            <span>TARGET {targetQuestionCount}</span>
+            <span>MAX {maximumQuestionCount}</span>
+          </div>
+        </section>
+      )}
 
       <section className="final-sidebar-card final-coverage-card">
         <div className="final-card-header">
@@ -327,43 +406,6 @@ function coverageStateLabel(state: "UNTOUCHED" | "IN_PROGRESS" | "COVERED") {
     case "UNTOUCHED":
       return "UNTOUCHED";
   }
-}
-
-function MasteryRing({ percentage }: { percentage: number }) {
-  const radius = 82;
-
-  const circumference = 2 * Math.PI * radius;
-
-  const dashOffset = circumference - (percentage / 100) * circumference;
-
-  return (
-    <div className="final-mastery-ring-wrap">
-      <svg
-        className="final-mastery-ring"
-        viewBox="0 0 200 200"
-        role="progressbar"
-        aria-label="Session Mastery"
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={Math.round(percentage)}
-      >
-        <circle className="final-mastery-track" cx="100" cy="100" r={radius} />
-
-        {percentage > 0 && (
-          <circle
-            className="final-mastery-progress"
-            cx="100"
-            cy="100"
-            r={radius}
-            strokeDasharray={circumference}
-            strokeDashoffset={dashOffset}
-          />
-        )}
-      </svg>
-
-      <strong className="final-mastery-value">{Math.round(percentage)}%</strong>
-    </div>
-  );
 }
 
 function InfoHint({ text }: { text: string }) {

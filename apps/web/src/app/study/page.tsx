@@ -665,7 +665,9 @@ function StudySessionPage() {
           </section>
 
           <StudySidebar
-            mastery={masteryPercent}
+            sessionProgress={
+              session.kind === "NORMAL" ? session.progress : null
+            }
             coverage={coverage?.percentage ?? 0}
             coverageAuthoritative={coverage?.hierarchy.authoritative ?? false}
             coveredCoreConceptCount={coverage?.coveredCoreConceptCount}
@@ -1140,7 +1142,9 @@ function AnalysisScreen({
           </section>
 
           <StudySidebar
-            mastery={masteryPercent}
+            sessionProgress={
+              updatedSession.kind === "NORMAL" ? updatedSession.progress : null
+            }
             coverage={coverage?.percentage ?? 0}
             coverageAuthoritative={coverage?.hierarchy.authoritative ?? false}
             coveredCoreConceptCount={coverage?.coveredCoreConceptCount}
