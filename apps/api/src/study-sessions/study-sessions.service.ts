@@ -822,6 +822,12 @@ export class StudySessionsService {
 
           conceptId: concept.id,
 
+          conceptNameSnapshot: concept.name,
+
+          conceptDifficultySnapshot: concept.difficulty,
+
+          conceptImportanceSnapshot: concept.importance,
+
           position,
 
           status: 'PENDING',
@@ -1415,6 +1421,8 @@ export class StudySessionsService {
 
         importance: true,
 
+        difficulty: true,
+
         createdAt: true,
 
         mastery: {
@@ -1514,6 +1522,12 @@ export class StudySessionsService {
           sessionId: session.id,
 
           conceptId: concept.id,
+
+          conceptNameSnapshot: concept.name,
+
+          conceptDifficultySnapshot: concept.difficulty,
+
+          conceptImportanceSnapshot: concept.importance,
 
           position: 0,
 

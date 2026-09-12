@@ -573,6 +573,15 @@ model SessionConceptProgress {
   conceptId String
   concept   Concept @relation(fields: [conceptId], references: [id], onDelete: Restrict)
 
+  // Historical concept metadata captured when the session starts.
+  //
+  // The live Concept row may later change as Study Pack material
+  // or hierarchy evolves. Session history must remain interpretable
+  // as it actually existed during this sitting.
+  conceptNameSnapshot       String
+  conceptDifficultySnapshot ConceptDifficulty
+  conceptImportanceSnapshot Int
+
   // Stable concept order captured when the session starts.
   position Int
 

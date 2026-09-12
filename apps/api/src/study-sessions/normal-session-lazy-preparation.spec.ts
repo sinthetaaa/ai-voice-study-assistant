@@ -217,6 +217,15 @@ describe('StudySessionsService lazy question preparation', () => {
       'concept-4',
       'concept-5',
     ]);
+
+    expect(createManyArgument.data[0]).toEqual(
+      expect.objectContaining({
+        conceptId: 'concept-1',
+        conceptNameSnapshot: 'Concept 1',
+        conceptDifficultySnapshot: 'INTERMEDIATE',
+        conceptImportanceSnapshot: 3,
+      }),
+    );
   });
 
   it('lazy-prepares the next pending concept before switching to it', async () => {
