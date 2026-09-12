@@ -602,6 +602,17 @@ export default function Home() {
                     )}
 
                     <button
+                      className="study-pack-detail-action"
+                      onClick={() =>
+                        router.push(
+                          `/study-packs/${encodeURIComponent(pack.studyPackId)}`,
+                        )
+                      }
+                    >
+                      View Progress
+                    </button>
+
+                    <button
                       className="study-pack-action"
                       disabled={Boolean(launchingStudyPackId)}
                       onClick={() => void openSavedStudy(pack)}

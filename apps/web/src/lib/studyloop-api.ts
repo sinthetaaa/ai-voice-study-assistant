@@ -246,6 +246,95 @@ export type StudyPackOverviewItem = {
   lastStudiedAt: string | null;
 };
 
+export type StudyPackProgressConcept = {
+  conceptId: string;
+  name: string;
+  difficulty: "FOUNDATIONAL" | "INTERMEDIATE" | "ADVANCED";
+  importance: number;
+  position: number;
+  status: "PENDING" | "IN_PROGRESS" | "COMPLETED" | "REVIEW_REQUIRED";
+  reviewRequired: boolean;
+
+  mastery: {
+    score: number;
+    evidenceWeight: number;
+    attemptCount: number;
+  };
+
+  startedAt: string | null;
+  completedAt: string | null;
+};
+
+export type StudyPackProgressHistorySession = {
+  sessionId: string;
+  sessionNumber: number | null;
+  kind: "NORMAL" | "REVIEW";
+  status: "ACTIVE" | "COMPLETED" | "ABANDONED";
+
+  startedAt: string;
+  completedAt: string | null;
+  updatedAt: string;
+
+  answeredQuestionCount: number;
+
+  conceptCount: number;
+  completedConceptCount: number;
+  reviewRequiredCount: number;
+
+  concepts: StudyPackProgressConcept[];
+};
+
+export type StudyPackProgressResult = {
+  studyPack: {
+    id: string;
+    name: string;
+    description: string | null;
+    createdAt: string;
+    updatedAt: string;
+  };
+
+  coverage: {
+    authoritative: boolean;
+    percentage: number | null;
+    coveredCoreConceptCount: number;
+    totalCoreConceptCount: number;
+  };
+
+  normalStudy: {
+    sessionCount: number;
+    completedSessionCount: number;
+
+    activeSession: {
+      sessionId: string;
+      sessionNumber: number;
+      startedAt: string;
+
+      progress: {
+        completedConceptCount: number;
+        reviewRequiredCount: number;
+        remainingConceptCount: number;
+
+        answeredQuestionCount: number;
+        targetQuestionCount: number;
+        maximumQuestionCount: number;
+
+        remainingToTarget: number;
+        remainingToMaximum: number;
+
+        targetReached: boolean;
+        maximumReached: boolean;
+      };
+    } | null;
+
+    nextSessionNumber: number;
+    primaryAction: StudyPackOverviewPrimaryAction;
+  };
+
+  lastStudiedAt: string | null;
+
+  history: StudyPackProgressHistorySession[];
+};
+
 export type StudySession = {
   sessionId: string;
 
@@ -560,6 +649,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const studyLoopApi = {
   getStudyPackOverview() {
     return request<StudyPackOverviewItem[]>("/study-packs/overview");
+  },
+
+  getStudyPackProgress(studyPackId: string) {
+    return request<StudyPackProgressResult>(
+      `/study-packs/${encodeURIComponent(studyPackId)}/progress`,
+    );
   },
 
   createStudyPack(name: string) {
