@@ -1,12 +1,13 @@
 "use client";
 
-import { ChangeEvent, useRef, useState } from "react";
+import { ChangeEvent, useEffect, useRef, useState } from "react";
 
 import { useRouter } from "next/navigation";
 
 import {
   ApiDocument,
   ReadinessResult,
+  StudyPackOverviewItem,
   StudyLoopApiError,
   studyLoopApi,
 } from "../lib/studyloop-api";
@@ -46,6 +47,18 @@ export default function Home() {
 
   const [startingSession, setStartingSession] = useState(false);
 
+  const [studyPackOverview, setStudyPackOverview] = useState<
+    StudyPackOverviewItem[]
+  >([]);
+
+  const [myStudiesLoading, setMyStudiesLoading] = useState(true);
+
+  const [myStudiesError, setMyStudiesError] = useState<string | null>(null);
+
+  const [launchingStudyPackId, setLaunchingStudyPackId] = useState<
+    string | null
+  >(null);
+
   const activeIndex = NAV_ITEMS.indexOf(activeNav);
 
   const canStartStudy = Boolean(
@@ -54,6 +67,45 @@ export default function Home() {
     readiness.counts.activeConceptCount > 0 &&
     uploadPhase === "READY",
   );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadMyStudies() {
+      setMyStudiesLoading(true);
+      setMyStudiesError(null);
+
+      try {
+        const overview = await studyLoopApi.getStudyPackOverview();
+
+        if (!cancelled) {
+          setStudyPackOverview(overview);
+        }
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+
+        console.error(error);
+
+        if (error instanceof StudyLoopApiError) {
+          setMyStudiesError(error.message);
+        } else {
+          setMyStudiesError("Could not load your saved studies.");
+        }
+      } finally {
+        if (!cancelled) {
+          setMyStudiesLoading(false);
+        }
+      }
+    }
+
+    void loadMyStudies();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   function scrollToSection(id: string) {
     document.getElementById(id)?.scrollIntoView({
@@ -292,6 +344,39 @@ export default function Home() {
     }
   }
 
+  async function openSavedStudy(pack: StudyPackOverviewItem) {
+    if (launchingStudyPackId) {
+      return;
+    }
+
+    const action = pack.normalStudy.primaryAction;
+
+    setLaunchingStudyPackId(pack.studyPackId);
+    setMyStudiesError(null);
+
+    try {
+      if (action.type === "RESUME_NORMAL_SESSION") {
+        router.push(`/study?sessionId=${encodeURIComponent(action.sessionId)}`);
+
+        return;
+      }
+
+      const session = await studyLoopApi.startStudySession(pack.studyPackId);
+
+      router.push(`/study?sessionId=${encodeURIComponent(session.sessionId)}`);
+    } catch (error) {
+      console.error(error);
+
+      if (error instanceof StudyLoopApiError) {
+        setMyStudiesError(error.message);
+      } else {
+        setMyStudiesError("Could not open this study session.");
+      }
+
+      setLaunchingStudyPackId(null);
+    }
+  }
+
   function handleError(error: unknown) {
     console.error(error);
 
@@ -380,6 +465,160 @@ export default function Home() {
               </button>
             </div>
           </div>
+        </div>
+      </section>
+
+      {/* =========================================
+          MY STUDIES
+      ========================================= */}
+
+      <section id="my-studies" className="scroll-section my-studies-section">
+        <div className="page-shell">
+          <div className="section-heading my-studies-heading">
+            <p className="section-kicker">MY STUDIES</p>
+            <h2>Pick up where you left off.</h2>
+            <p className="my-studies-intro">
+              Your Study Packs stay available across sessions so you can
+              continue without starting over.
+            </p>
+          </div>
+
+          {myStudiesLoading ? (
+            <div className="my-studies-loading glass-card">
+              <span className="small-spinner" />
+              <span>Loading your studies…</span>
+            </div>
+          ) : studyPackOverview.length === 0 ? (
+            <div className="my-studies-empty glass-card">
+              <p>No Study Packs yet.</p>
+              <span>Upload material to begin your first study.</span>
+
+              <button
+                className="primary-pill my-studies-empty-action"
+                onClick={() => scrollToSection("upload")}
+              >
+                Start a New Study
+                <ArrowIcon />
+              </button>
+            </div>
+          ) : (
+            <div className="my-studies-grid">
+              {studyPackOverview.map((pack) => {
+                const action = pack.normalStudy.primaryAction;
+                const launching = launchingStudyPackId === pack.studyPackId;
+
+                const coverageLabel =
+                  pack.coverage.authoritative &&
+                  pack.coverage.percentage !== null
+                    ? `${pack.coverage.percentage}%`
+                    : "Preparing…";
+
+                const coverageWidth =
+                  pack.coverage.authoritative &&
+                  pack.coverage.percentage !== null
+                    ? Math.max(0, Math.min(100, pack.coverage.percentage))
+                    : 0;
+
+                const actionLabel =
+                  action.type === "RESUME_NORMAL_SESSION"
+                    ? `Resume Session ${action.sessionNumber}`
+                    : `Start Session ${action.sessionNumber}`;
+
+                return (
+                  <article
+                    className="study-pack-card glass-card"
+                    key={pack.studyPackId}
+                  >
+                    <div className="study-pack-card-header">
+                      <div>
+                        <p className="study-pack-eyebrow">STUDY PACK</p>
+                        <h3>{pack.name}</h3>
+                      </div>
+
+                      {pack.normalStudy.activeSession && (
+                        <span className="study-pack-active-badge">ACTIVE</span>
+                      )}
+                    </div>
+
+                    {pack.description && (
+                      <p className="study-pack-description">
+                        {pack.description}
+                      </p>
+                    )}
+
+                    <div className="study-pack-coverage">
+                      <div className="study-pack-coverage-row">
+                        <span>Study Pack Coverage</span>
+                        <strong>{coverageLabel}</strong>
+                      </div>
+
+                      <div
+                        className="study-pack-coverage-track"
+                        aria-hidden="true"
+                      >
+                        <span
+                          className="study-pack-coverage-fill"
+                          style={{
+                            width: `${coverageWidth}%`,
+                          }}
+                        />
+                      </div>
+
+                      <p className="study-pack-coverage-detail">
+                        {pack.coverage.authoritative
+                          ? `${pack.coverage.coveredCoreConceptCount} of ${pack.coverage.totalCoreConceptCount} core concepts covered`
+                          : "Curriculum coverage is still being prepared."}
+                      </p>
+                    </div>
+
+                    <div className="study-pack-stats">
+                      <div className="study-pack-stat">
+                        <strong>
+                          {pack.normalStudy.completedSessionCount}
+                        </strong>
+                        <span>
+                          completed{" "}
+                          {pack.normalStudy.completedSessionCount === 1
+                            ? "session"
+                            : "sessions"}
+                        </span>
+                      </div>
+
+                      <div className="study-pack-stat study-pack-last-studied">
+                        <strong>
+                          {formatLastStudiedAt(pack.lastStudiedAt)}
+                        </strong>
+                        <span>last studied</span>
+                      </div>
+                    </div>
+
+                    {pack.normalStudy.activeSession && (
+                      <p className="study-pack-active-note">
+                        Session {pack.normalStudy.activeSession.sessionNumber}{" "}
+                        is active ·{" "}
+                        {pack.normalStudy.activeSession.answeredQuestionCount}{" "}
+                        questions answered
+                      </p>
+                    )}
+
+                    <button
+                      className="study-pack-action"
+                      disabled={Boolean(launchingStudyPackId)}
+                      onClick={() => void openSavedStudy(pack)}
+                    >
+                      {launching ? "Opening…" : actionLabel}
+
+                      {!launching && <ArrowIcon />}
+                    </button>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+
+          {myStudiesError && (
+            <div className="my-studies-error">{myStudiesError}</div>
+          )}
         </div>
       </section>
 
@@ -695,6 +934,23 @@ function DocumentIcon() {
       <span />
     </div>
   );
+}
+
+function formatLastStudiedAt(value: string | null) {
+  if (!value) {
+    return "Not studied yet";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "Not studied yet";
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
 }
 
 function formatFileSize(bytes: number) {

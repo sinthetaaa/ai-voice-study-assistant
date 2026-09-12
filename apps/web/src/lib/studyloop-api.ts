@@ -202,6 +202,50 @@ export type StudyPackCoverage = {
   topics: StudyPackCoverageTopic[];
 };
 
+export type StudyPackOverviewPrimaryAction =
+  | {
+      type: "RESUME_NORMAL_SESSION";
+      sessionId: string;
+      sessionNumber: number;
+    }
+  | {
+      type: "START_NORMAL_SESSION";
+      sessionNumber: number;
+    };
+
+export type StudyPackOverviewItem = {
+  studyPackId: string;
+  name: string;
+  description: string | null;
+  createdAt: string;
+  updatedAt: string;
+
+  coverage: {
+    authoritative: boolean;
+    percentage: number | null;
+    coveredCoreConceptCount: number;
+    totalCoreConceptCount: number;
+  };
+
+  normalStudy: {
+    sessionCount: number;
+    completedSessionCount: number;
+
+    activeSession: {
+      sessionId: string;
+      sessionNumber: number;
+      startedAt: string;
+      updatedAt: string;
+      answeredQuestionCount: number;
+    } | null;
+
+    nextSessionNumber: number;
+    primaryAction: StudyPackOverviewPrimaryAction;
+  };
+
+  lastStudiedAt: string | null;
+};
+
 export type StudySession = {
   sessionId: string;
 
@@ -514,6 +558,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const studyLoopApi = {
+  getStudyPackOverview() {
+    return request<StudyPackOverviewItem[]>("/study-packs/overview");
+  },
+
   createStudyPack(name: string) {
     return request<StudyPack>("/study-packs", {
       method: "POST",
