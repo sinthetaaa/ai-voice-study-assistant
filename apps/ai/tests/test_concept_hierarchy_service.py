@@ -16,11 +16,19 @@ from app.llm.provider import (
 
 
 class FakeLlmProvider(LlmProvider):
+
     def __init__(
         self,
-        result: ConceptHierarchyResult,
+        results: (
+            ConceptHierarchyResult
+            | list[ConceptHierarchyResult]
+        ),
     ) -> None:
-        self.result = result
+        if isinstance(results, list):
+            self.results = results
+        else:
+            self.results = [results]
+
         self.calls = []
 
     @property
@@ -36,6 +44,8 @@ class FakeLlmProvider(LlmProvider):
         messages,
         response_model,
     ):
+        call_index = len(self.calls)
+
         self.calls.append(
             {
                 "messages": messages,
@@ -45,7 +55,12 @@ class FakeLlmProvider(LlmProvider):
             }
         )
 
-        return self.result
+        result_index = min(
+            call_index,
+            len(self.results) - 1,
+        )
+
+        return self.results[result_index]
 
 
 def atomic(
@@ -164,6 +179,103 @@ class ConceptHierarchyServiceTest(
                 "response_model"
             ],
             ConceptHierarchyResult,
+        )
+
+    async def test_semantic_failure_is_repaired(
+        self,
+    ) -> None:
+        invalid = valid_result()
+        invalid.topics[1].core_concepts[
+            0
+        ].atomic_concept_ids = [
+            "concept-3",
+            "invented-concept",
+        ]
+
+        repaired = valid_result()
+
+        provider = FakeLlmProvider(
+            [
+                invalid,
+                repaired,
+            ],
+        )
+
+        service = ConceptHierarchyService(
+            llm_provider=provider,
+        )
+
+        generated = await service.generate(
+            self.concepts,
+        )
+
+        self.assertIs(
+            generated,
+            repaired,
+        )
+
+        self.assertEqual(
+            len(provider.calls),
+            2,
+        )
+
+        repair_prompt = provider.calls[1][
+            "messages"
+        ][1].content
+
+        self.assertIn(
+            "REPAIR ATTEMPT",
+            repair_prompt,
+        )
+
+        self.assertIn(
+            "unknown atomic concept IDs",
+            repair_prompt,
+        )
+
+        self.assertIn(
+            "invented-concept",
+            repair_prompt,
+        )
+
+        self.assertIn(
+            "PREVIOUS_INVALID_HIERARCHY",
+            repair_prompt,
+        )
+
+    async def test_semantic_failure_exhausts_retries(
+        self,
+    ) -> None:
+        invalid = valid_result()
+        invalid.topics[1].core_concepts[
+            0
+        ].atomic_concept_ids = [
+            "concept-3",
+            "invented-concept",
+        ]
+
+        provider = FakeLlmProvider(
+            invalid,
+        )
+
+        service = ConceptHierarchyService(
+            llm_provider=provider,
+        )
+
+        with self.assertRaisesRegex(
+            ConceptHierarchyValidationError,
+            (
+                "Hierarchy generation failed "
+                "semantic validation after retries"
+            ),
+        ):
+            await service.generate(
+                self.concepts,
+            )
+
+        self.assertEqual(
+            len(provider.calls),
+            service.SEMANTIC_ATTEMPTS,
         )
 
     async def test_unknown_atomic_id_is_rejected(

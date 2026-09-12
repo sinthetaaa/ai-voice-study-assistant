@@ -24,6 +24,7 @@ class ConceptHierarchyValidationError(
 
 class ConceptHierarchyService:
     DESCRIPTION_INPUT_LIMIT = 220
+    SEMANTIC_ATTEMPTS = 2
 
     HIERARCHY_PROMPT = """
 You are StudyLoop's learner-facing academic hierarchy
@@ -139,6 +140,75 @@ Return only the requested structured hierarchy.
                 "At least one atomic concept is required",
             )
 
+        last_error: str | None = None
+        previous_result: (
+            ConceptHierarchyResult | None
+        ) = None
+
+        for attempt in range(
+            self.SEMANTIC_ATTEMPTS,
+        ):
+            user_prompt = self._build_prompt(
+                concepts=concepts,
+                previous_error=(
+                    last_error
+                    if attempt > 0
+                    else None
+                ),
+                previous_result=(
+                    previous_result
+                    if attempt > 0
+                    else None
+                ),
+            )
+
+            result = await (
+                self._llm_provider
+                .generate_structured(
+                    messages=[
+                        LlmMessage(
+                            role="system",
+                            content=self.HIERARCHY_PROMPT,
+                        ),
+                        LlmMessage(
+                            role="user",
+                            content=user_prompt,
+                        ),
+                    ],
+                    response_model=(
+                        ConceptHierarchyResult
+                    ),
+                )
+            )
+
+            try:
+                self._validate_hierarchy(
+                    concepts=concepts,
+                    result=result,
+                )
+                return result
+            except (
+                ConceptHierarchyValidationError
+            ) as error:
+                last_error = str(error)
+                previous_result = result
+
+        raise ConceptHierarchyValidationError(
+            "Hierarchy generation failed semantic "
+            "validation after retries: "
+            f"{last_error or 'unknown error'}"
+        )
+
+    def _build_prompt(
+        self,
+        concepts: list[
+            AtomicConceptHierarchyInput
+        ],
+        previous_error: str | None,
+        previous_result: (
+            ConceptHierarchyResult | None
+        ),
+    ) -> str:
         concept_payload = [
             {
                 "id": concept.id,
@@ -155,7 +225,7 @@ Return only the requested structured hierarchy.
             for concept in concepts
         ]
 
-        user_prompt = (
+        prompt = (
             "Organize the following ATOMIC_CONCEPTS "
             "into a compact learner-facing Study Topic -> "
             "Core Concept -> Atomic Concept hierarchy.\n\n"
@@ -169,31 +239,46 @@ Return only the requested structured hierarchy.
             )
         )
 
-        result = await (
-            self._llm_provider
-            .generate_structured(
-                messages=[
-                    LlmMessage(
-                        role="system",
-                        content=self.HIERARCHY_PROMPT,
-                    ),
-                    LlmMessage(
-                        role="user",
-                        content=user_prompt,
-                    ),
-                ],
-                response_model=(
-                    ConceptHierarchyResult
-                ),
+        if (
+            previous_error
+            and previous_result is not None
+        ):
+            previous_payload = (
+                previous_result.model_dump(
+                    mode="json",
+                )
             )
-        )
 
-        self._validate_hierarchy(
-            concepts=concepts,
-            result=result,
-        )
+            prompt += (
+                "\n\n"
+                "============================================================"
+                "\nREPAIR ATTEMPT"
+                "\n============================================================"
+                "\nYour previous hierarchy failed "
+                "StudyLoop semantic validation."
+                "\n\nVALIDATOR FEEDBACK:\n"
+                + previous_error
+                + "\n\nPREVIOUS_INVALID_HIERARCHY:\n"
+                + json.dumps(
+                    previous_payload,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                )
+                + "\n\nRegenerate the COMPLETE hierarchy "
+                "from scratch."
+                "\nDo not return a patch or partial correction."
+                "\nUse ONLY atomic concept IDs that appear "
+                "exactly in ATOMIC_CONCEPTS."
+                "\nNever put concept names, explanations, "
+                "comments, or prose inside atomic_concept_ids."
+                "\nEvery supplied atomic concept ID must "
+                "appear exactly once."
+                "\nDo not invent, alter, shorten, repair, "
+                "or approximate any ID."
+                "\nReturn the complete corrected hierarchy."
+            )
 
-        return result
+        return prompt
 
     def _validate_hierarchy(
         self,
