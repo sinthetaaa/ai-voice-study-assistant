@@ -247,6 +247,17 @@ export type StudySessionAnalysisSourcesResult = {
   sources: StudySessionAnalysisSource[];
 };
 
+function isPrismaUniqueConstraintError(
+  error: unknown,
+): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: unknown }).code === 'P2002'
+  );
+}
+
 @Injectable()
 export class StudySessionsService {
   constructor(
@@ -451,7 +462,108 @@ export class StudySessionsService {
     };
   }
 
-  async startSession(studyPackId: string): Promise<StartStudySessionResult> {
+  private async getResumableActiveNormalSession(
+    studyPackId: string,
+  ): Promise<StartStudySessionResult | null> {
+    const existingSession =
+      await this.prisma.studySession.findFirst({
+        where: {
+          studyPackId,
+          kind: 'NORMAL',
+          status: 'ACTIVE',
+        },
+        orderBy: [
+          {
+            startedAt: 'asc',
+          },
+          {
+            id: 'asc',
+          },
+        ],
+        select: {
+          id: true,
+        },
+      });
+
+    if (!existingSession) {
+      return null;
+    }
+
+    const state = await this.getSessionState(
+      existingSession.id,
+    );
+
+    /*
+     * ACTIVE Normal Study sessions must always
+     * remain resumable.
+     *
+     * Missing active pointers indicate persisted
+     * state corruption. Do not hide it by creating
+     * a second sitting.
+     */
+    if (
+      !state.currentConcept ||
+      !state.currentQuestion
+    ) {
+      throw new InternalServerErrorException(
+        `ACTIVE NORMAL StudySession ${existingSession.id} ` +
+          'is missing an active concept or question',
+      );
+    }
+
+    return {
+      ...state,
+      currentConcept: state.currentConcept,
+      currentQuestion: state.currentQuestion,
+    };
+  }
+
+  async startSession(
+    studyPackId: string,
+  ): Promise<StartStudySessionResult> {
+    const existingSession =
+      await this.getResumableActiveNormalSession(
+        studyPackId,
+      );
+
+    if (existingSession) {
+      return existingSession;
+    }
+
+    try {
+      return await this.createNormalSession(
+        studyPackId,
+      );
+    } catch (error) {
+      /*
+       * The database partial unique index is the
+       * final concurrent-start guard.
+       *
+       * Two requests may both pass the fast lookup.
+       * One creates the ACTIVE Normal session.
+       * The losing request receives P2002 and resumes
+       * the session created by the winner.
+       */
+      if (!isPrismaUniqueConstraintError(error)) {
+        throw error;
+      }
+
+      const concurrentSession =
+        await this.getResumableActiveNormalSession(
+          studyPackId,
+        );
+
+      if (!concurrentSession) {
+        throw error;
+      }
+
+      return concurrentSession;
+    }
+  }
+
+  private async createNormalSession(
+    studyPackId: string,
+  ): Promise<StartStudySessionResult> {
     const studyPack = await this.prisma.studyPack.findUnique({
       where: {
         id: studyPackId,

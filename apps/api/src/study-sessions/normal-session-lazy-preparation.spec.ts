@@ -65,6 +65,9 @@ describe('StudySessionsService lazy question preparation', () => {
     };
 
     const prisma = {
+      studySession: {
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
       studyPack: {
         findUnique: jest.fn().mockResolvedValue({
           id: 'pack-1',
