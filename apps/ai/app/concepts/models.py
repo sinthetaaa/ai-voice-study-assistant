@@ -324,7 +324,7 @@ class ConceptHierarchyRequest(BaseModel):
         AtomicConceptHierarchyInput
     ] = Field(
         min_length=1,
-        max_length=100,
+        max_length=500,
     )
 
     @field_validator("concepts")
@@ -350,6 +350,61 @@ class ConceptHierarchyRequest(BaseModel):
         return concepts
 
 
+class ConceptHierarchyGroupingAssignment(
+    BaseModel
+):
+    position: int = Field(
+        ge=1,
+        le=100,
+    )
+    local_group: int = Field(
+        ge=1,
+        le=10,
+    )
+    topic_name: str = Field(
+        min_length=2,
+        max_length=120,
+    )
+    core_name: str = Field(
+        min_length=2,
+        max_length=120,
+    )
+
+    @field_validator(
+        "topic_name",
+        "core_name",
+    )
+    @classmethod
+    def clean_grouping_name(
+        cls,
+        value: str,
+    ) -> str:
+        cleaned = (
+            value
+            .strip()
+            .rstrip(".:;,")
+        )
+
+        if len(cleaned) < 2:
+            raise ValueError(
+                "Hierarchy grouping name "
+                "cannot be empty",
+            )
+
+        return cleaned
+
+
+class ConceptHierarchyGroupingResult(
+    BaseModel
+):
+    assignments: list[
+        ConceptHierarchyGroupingAssignment
+    ] = Field(
+        min_length=1,
+        max_length=100,
+    )
+
+
 class CoreConceptPlan(BaseModel):
     name: str = Field(
         min_length=2,
@@ -368,7 +423,7 @@ class CoreConceptPlan(BaseModel):
 
     atomic_concept_ids: list[str] = Field(
         min_length=1,
-        max_length=100,
+        max_length=500,
     )
 
     @field_validator("name")

@@ -6,6 +6,9 @@ from app.concepts.hierarchy_service import (
 )
 from app.concepts.models import (
     AtomicConceptHierarchyInput,
+    ConceptHierarchyGroupingAssignment,
+    ConceptHierarchyGroupingResult,
+    ConceptHierarchyRequest,
     ConceptHierarchyResult,
     CoreConceptPlan,
     StudyTopicPlan,
@@ -19,10 +22,7 @@ class FakeLlmProvider(LlmProvider):
 
     def __init__(
         self,
-        results: (
-            ConceptHierarchyResult
-            | list[ConceptHierarchyResult]
-        ),
+        results,
     ) -> None:
         if isinstance(results, list):
             self.results = results
@@ -121,6 +121,35 @@ def valid_result(
                         atomic_concept_ids=[
                             "concept-3",
                         ],
+                    ),
+                ],
+            ),
+        ],
+    )
+
+
+def single_core_result(
+    topic_name: str,
+    core_name: str,
+    atomic_ids: list[str],
+) -> ConceptHierarchyResult:
+    return ConceptHierarchyResult(
+        topics=[
+            StudyTopicPlan(
+                name=topic_name,
+                description=(
+                    f"{topic_name} concepts "
+                    "for staged hierarchy testing."
+                ),
+                core_concepts=[
+                    CoreConceptPlan(
+                        name=core_name,
+                        description=(
+                            f"{core_name} groups related "
+                            "concepts for hierarchy testing."
+                        ),
+                        importance=4,
+                        atomic_concept_ids=atomic_ids,
                     ),
                 ],
             ),
@@ -276,6 +305,364 @@ class ConceptHierarchyServiceTest(
         self.assertEqual(
             len(provider.calls),
             service.SEMANTIC_ATTEMPTS,
+        )
+
+    async def test_grouping_repairs_missing_position(
+        self,
+    ) -> None:
+        invalid = ConceptHierarchyGroupingResult(
+            assignments=[
+                ConceptHierarchyGroupingAssignment(
+                    position=1,
+                    local_group=1,
+                    topic_name="Learning Foundations",
+                    core_name="Value Learning",
+                ),
+                ConceptHierarchyGroupingAssignment(
+                    position=3,
+                    local_group=1,
+                    topic_name="Learning Strategies",
+                    core_name="Exploration Strategies",
+                ),
+            ],
+        )
+
+        repaired = ConceptHierarchyGroupingResult(
+            assignments=[
+                ConceptHierarchyGroupingAssignment(
+                    position=1,
+                    local_group=1,
+                    topic_name="Learning Foundations",
+                    core_name="Value Learning",
+                ),
+                ConceptHierarchyGroupingAssignment(
+                    position=2,
+                    local_group=1,
+                    topic_name="Learning Foundations",
+                    core_name="Value Learning",
+                ),
+                ConceptHierarchyGroupingAssignment(
+                    position=3,
+                    local_group=1,
+                    topic_name="Learning Strategies",
+                    core_name="Exploration Strategies",
+                ),
+            ],
+        )
+
+        provider = FakeLlmProvider(
+            [
+                invalid,
+                repaired,
+            ],
+        )
+
+        service = ConceptHierarchyService(
+            llm_provider=provider,
+        )
+
+        generated = await (
+            service._generate_grouped_hierarchy(
+                self.concepts,
+            )
+        )
+
+        self.assertEqual(
+            len(provider.calls),
+            2,
+        )
+
+        repair_prompt = provider.calls[1][
+            "messages"
+        ][1].content
+
+        self.assertIn(
+            "omitted positions: 2",
+            repair_prompt,
+        )
+
+        assigned_ids = [
+            concept_id
+            for topic in generated.topics
+            for core in topic.core_concepts
+            for concept_id in (
+                core.atomic_concept_ids
+            )
+        ]
+
+        self.assertEqual(
+            assigned_ids,
+            [
+                "concept-1",
+                "concept-2",
+                "concept-3",
+            ],
+        )
+
+    async def test_grouping_uses_local_group_for_membership(
+        self,
+    ) -> None:
+        concepts = [
+            atomic(
+                f"grouped-{index:02d}",
+                f"Grouped Concept {index}",
+            )
+            for index in range(
+                1,
+                13,
+            )
+        ]
+
+        result = ConceptHierarchyGroupingResult(
+            assignments=[
+                ConceptHierarchyGroupingAssignment(
+                    position=index,
+                    local_group=(
+                        ((index - 1) % 4) + 1
+                    ),
+                    topic_name=(
+                        f"Generated Topic {index}"
+                    ),
+                    core_name=(
+                        f"Generated Core {index}"
+                    ),
+                )
+                for index in range(
+                    1,
+                    13,
+                )
+            ],
+        )
+
+        provider = FakeLlmProvider(
+            result,
+        )
+
+        service = ConceptHierarchyService(
+            llm_provider=provider,
+        )
+
+        generated = await (
+            service._generate_grouped_hierarchy(
+                concepts,
+            )
+        )
+
+        core_count = sum(
+            len(topic.core_concepts)
+            for topic in generated.topics
+        )
+
+        self.assertEqual(
+            core_count,
+            4,
+        )
+
+        assigned_ids = [
+            concept_id
+            for topic in generated.topics
+            for core in topic.core_concepts
+            for concept_id in (
+                core.atomic_concept_ids
+            )
+        ]
+
+        self.assertEqual(
+            len(assigned_ids),
+            12,
+        )
+
+        self.assertEqual(
+            set(assigned_ids),
+            {
+                concept.id
+                for concept in concepts
+            },
+        )
+
+    def test_request_accepts_more_than_one_hundred_concepts(
+        self,
+    ) -> None:
+        concepts = [
+            atomic(
+                f"large-{index:03d}",
+                f"Large Concept {index}",
+            )
+            for index in range(
+                1,
+                128,
+            )
+        ]
+
+        request = ConceptHierarchyRequest(
+            concepts=concepts,
+        )
+
+        self.assertEqual(
+            len(request.concepts),
+            127,
+        )
+
+    async def test_large_hierarchy_is_staged_and_expanded(
+        self,
+    ) -> None:
+        concepts = [
+            atomic(
+                f"large-{index:03d}",
+                f"Large Concept {index}",
+            )
+            for index in range(
+                1,
+                102,
+            )
+        ]
+
+        batches = [
+            concepts[0:30],
+            concepts[30:60],
+            concepts[60:90],
+            concepts[90:101],
+        ]
+
+        local_results = [
+            ConceptHierarchyGroupingResult(
+                assignments=[
+                    ConceptHierarchyGroupingAssignment(
+                        position=position,
+                        local_group=1,
+                        topic_name=(
+                            f"Batch {index}"
+                        ),
+                        core_name=(
+                            f"Batch {index} Core"
+                        ),
+                    )
+                    for position, _
+                    in enumerate(
+                        batch,
+                        start=1,
+                    )
+                ],
+            )
+            for index, batch
+            in enumerate(
+                batches,
+                start=1,
+            )
+        ]
+
+        global_result = ConceptHierarchyGroupingResult(
+            assignments=[
+                ConceptHierarchyGroupingAssignment(
+                    position=position,
+                    local_group=1,
+                    topic_name="Global Topic",
+                    core_name="Global Core",
+                )
+                for position in range(
+                    1,
+                    5,
+                )
+            ],
+        )
+
+        provider = FakeLlmProvider(
+            [
+                *local_results,
+                global_result,
+            ],
+        )
+
+        service = ConceptHierarchyService(
+            llm_provider=provider,
+        )
+
+        generated = await service.generate(
+            concepts,
+        )
+
+        self.assertEqual(
+            len(provider.calls),
+            5,
+        )
+
+        first_local_prompt = provider.calls[0][
+            "messages"
+        ][1].content
+
+        self.assertIn(
+            '"position":1',
+            first_local_prompt,
+        )
+
+        self.assertNotIn(
+            '"id":"atomic-001"',
+            first_local_prompt,
+        )
+
+        self.assertNotIn(
+            '"id":"large-001"',
+            first_local_prompt,
+        )
+
+        self.assertIs(
+            provider.calls[0][
+                "response_model"
+            ],
+            ConceptHierarchyGroupingResult,
+        )
+
+        self.assertIs(
+            provider.calls[-1][
+                "response_model"
+            ],
+            ConceptHierarchyGroupingResult,
+        )
+
+        global_prompt = provider.calls[-1][
+            "messages"
+        ][1].content
+
+        self.assertIn(
+            '"position":1',
+            global_prompt,
+        )
+
+        self.assertNotIn(
+            "hierarchy-group-0001",
+            global_prompt,
+        )
+
+        assigned_ids = [
+            concept_id
+            for topic in generated.topics
+            for core in topic.core_concepts
+            for concept_id in (
+                core.atomic_concept_ids
+            )
+        ]
+
+        self.assertEqual(
+            len(assigned_ids),
+            101,
+        )
+
+        self.assertEqual(
+            set(assigned_ids),
+            {
+                concept.id
+                for concept in concepts
+            },
+        )
+
+        self.assertFalse(
+            any(
+                concept_id.startswith(
+                    "hierarchy-group-"
+                )
+                for concept_id
+                in assigned_ids
+            )
         )
 
     async def test_unknown_atomic_id_is_rejected(
