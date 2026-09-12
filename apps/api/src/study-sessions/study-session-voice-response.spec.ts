@@ -61,7 +61,7 @@ function makeResult(
 
       action: 'ASK_QUESTION',
 
-      reasonCode: 'TEST',
+      reasonCode: 'CORRECT_RECALL_ADVANCE_LEVEL',
 
       reason: 'test',
 
@@ -104,15 +104,21 @@ function makeResult(
       startedAt: new Date(),
 
       completedAt: null,
+      sessionNumber: 1,
 
       conceptCount: 1,
 
       progress: {
         completedConceptCount: 0,
-
         reviewRequiredCount: 0,
-
         remainingConceptCount: 1,
+        answeredQuestionCount: 1,
+        targetQuestionCount: 3,
+        maximumQuestionCount: 20,
+        remainingToTarget: 2,
+        remainingToMaximum: 19,
+        targetReached: false,
+        maximumReached: false,
       },
 
       currentConcept: null,
