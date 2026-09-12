@@ -503,6 +503,116 @@ class ConceptHierarchyServiceTest(
             127,
         )
 
+    async def test_medium_hierarchy_uses_staged_grouping(
+        self,
+    ) -> None:
+        concepts = [
+            atomic(
+                f"medium-{index:03d}",
+                f"Medium Concept {index}",
+            )
+            for index in range(
+                1,
+                34,
+            )
+        ]
+
+        first_local = ConceptHierarchyGroupingResult(
+            assignments=[
+                ConceptHierarchyGroupingAssignment(
+                    position=position,
+                    local_group=1,
+                    topic_name="Medium Topic One",
+                    core_name="Medium Core One",
+                )
+                for position in range(
+                    1,
+                    31,
+                )
+            ],
+        )
+
+        second_local = ConceptHierarchyGroupingResult(
+            assignments=[
+                ConceptHierarchyGroupingAssignment(
+                    position=position,
+                    local_group=1,
+                    topic_name="Medium Topic Two",
+                    core_name="Medium Core Two",
+                )
+                for position in range(
+                    1,
+                    4,
+                )
+            ],
+        )
+
+        global_result = ConceptHierarchyGroupingResult(
+            assignments=[
+                ConceptHierarchyGroupingAssignment(
+                    position=1,
+                    local_group=1,
+                    topic_name="Medium Global Topic",
+                    core_name="Medium Global Core",
+                ),
+                ConceptHierarchyGroupingAssignment(
+                    position=2,
+                    local_group=1,
+                    topic_name="Medium Global Topic",
+                    core_name="Medium Global Core",
+                ),
+            ],
+        )
+
+        provider = FakeLlmProvider(
+            [
+                first_local,
+                second_local,
+                global_result,
+            ],
+        )
+
+        service = ConceptHierarchyService(
+            llm_provider=provider,
+        )
+
+        generated = await service.generate(
+            concepts,
+        )
+
+        self.assertEqual(
+            len(provider.calls),
+            3,
+        )
+
+        for call in provider.calls:
+            self.assertIs(
+                call["response_model"],
+                ConceptHierarchyGroupingResult,
+            )
+
+        assigned_ids = [
+            concept_id
+            for topic in generated.topics
+            for core in topic.core_concepts
+            for concept_id in (
+                core.atomic_concept_ids
+            )
+        ]
+
+        self.assertEqual(
+            len(assigned_ids),
+            33,
+        )
+
+        self.assertEqual(
+            set(assigned_ids),
+            {
+                concept.id
+                for concept in concepts
+            },
+        )
+
     async def test_large_hierarchy_is_staged_and_expanded(
         self,
     ) -> None:

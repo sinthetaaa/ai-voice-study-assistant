@@ -32,7 +32,7 @@ class ConceptHierarchyService:
     # A single hierarchy LLM request remains deliberately
     # bounded so its prompt and structured response stay
     # comfortably inside the local model context.
-    DIRECT_HIERARCHY_LIMIT = 40
+    DIRECT_HIERARCHY_LIMIT = 20
 
     # Keep staged requests smaller than the direct ceiling.
     # Hierarchy responses repeat every UUID, so output size
