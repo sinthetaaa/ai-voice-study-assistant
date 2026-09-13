@@ -59,6 +59,8 @@ export default function Home() {
 
   const [homeAuthState, setHomeAuthState] = useState<HomeAuthState>("CHECKING");
 
+  const [loggingOut, setLoggingOut] = useState(false);
+
   const [launchingStudyPackId, setLaunchingStudyPackId] = useState<
     string | null
   >(null);
@@ -145,6 +147,34 @@ export default function Home() {
       cancelled = true;
     };
   }, []);
+
+  async function handleAccountAction() {
+    if (homeAuthState === "CHECKING" || loggingOut) {
+      return;
+    }
+
+    if (homeAuthState !== "AUTHENTICATED") {
+      router.push("/login");
+
+      return;
+    }
+
+    setLoggingOut(true);
+
+    try {
+      await studyLoopApi.logout();
+
+      window.location.replace("/");
+    } catch (error) {
+      setLoggingOut(false);
+
+      if (error instanceof StudyLoopApiError) {
+        setMyStudiesError(error.message);
+      } else {
+        setMyStudiesError("Could not sign out. Please try again.");
+      }
+    }
+  }
 
   function scrollToSection(id: string) {
     document.getElementById(id)?.scrollIntoView({
@@ -492,8 +522,23 @@ export default function Home() {
 
             <button
               className="account-button"
-              aria-label="Login"
-              onClick={() => router.push("/login")}
+              type="button"
+              aria-label={
+                homeAuthState === "AUTHENTICATED"
+                  ? loggingOut
+                    ? "Signing out"
+                    : "Sign out"
+                  : "Sign in"
+              }
+              title={
+                homeAuthState === "AUTHENTICATED"
+                  ? loggingOut
+                    ? "Signing out…"
+                    : "Sign out"
+                  : "Sign in"
+              }
+              disabled={homeAuthState === "CHECKING" || loggingOut}
+              onClick={() => void handleAccountAction()}
             >
               <UserIcon />
             </button>
