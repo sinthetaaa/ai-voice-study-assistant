@@ -54,8 +54,11 @@ export class StudyPackOverviewService {
     private readonly studySessionsService: StudySessionsService,
   ) {}
 
-  async findAll(): Promise<StudyPackOverviewItem[]> {
+  async findAll(ownerId: string): Promise<StudyPackOverviewItem[]> {
     const studyPacks = await this.prisma.studyPack.findMany({
+      where: {
+        ownerId,
+      },
       orderBy: [
         {
           createdAt: 'desc',

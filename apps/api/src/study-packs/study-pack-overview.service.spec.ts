@@ -1,3 +1,8 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
+
+import type { PrismaService } from '../prisma/prisma.service';
+import type { StudySessionsService } from '../study-sessions/study-sessions.service';
+
 jest.mock('../prisma/prisma.service', () => ({
   PrismaService: class PrismaService {},
 }));
@@ -6,7 +11,8 @@ jest.mock('../study-sessions/study-sessions.service', () => ({
   StudySessionsService: class StudySessionsService {},
 }));
 
-const { StudyPackOverviewService } = require('./study-pack-overview.service');
+const { StudyPackOverviewService } =
+  require('./study-pack-overview.service') as typeof import('./study-pack-overview.service');
 
 describe('StudyPackOverviewService', () => {
   it('returns resume state with the exact Normal session number', async () => {
@@ -67,9 +73,20 @@ describe('StudyPackOverviewService', () => {
       }),
     };
 
-    const service = new StudyPackOverviewService(prisma, studySessionsService);
+    const service = new StudyPackOverviewService(
+      prisma as unknown as PrismaService,
+      studySessionsService as unknown as StudySessionsService,
+    );
 
-    const result = await service.findAll();
+    const result = await service.findAll('user-1');
+
+    expect(prisma.studyPack.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          ownerId: 'user-1',
+        },
+      }),
+    );
 
     expect(result).toHaveLength(1);
 
@@ -135,9 +152,12 @@ describe('StudyPackOverviewService', () => {
       }),
     };
 
-    const service = new StudyPackOverviewService(prisma, studySessionsService);
+    const service = new StudyPackOverviewService(
+      prisma as unknown as PrismaService,
+      studySessionsService as unknown as StudySessionsService,
+    );
 
-    const result = await service.findAll();
+    const result = await service.findAll('user-1');
 
     expect(result[0].coverage).toEqual({
       authoritative: false,

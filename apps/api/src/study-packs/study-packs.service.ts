@@ -21,12 +21,13 @@ function hasPrismaErrorCode(error: unknown, code: string): boolean {
 export class StudyPacksService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(dto: CreateStudyPackDto) {
+  async create(dto: CreateStudyPackDto, ownerId: string) {
     return this.prisma.studyPack.create({
       data: {
         name: dto.name,
         description: dto.description,
         goal: dto.goal,
+        ownerId,
       },
       include: {
         documents: true,
@@ -96,8 +97,11 @@ export class StudyPacksService {
     }
   }
 
-  async findAll() {
+  async findAll(ownerId: string) {
     return this.prisma.studyPack.findMany({
+      where: {
+        ownerId,
+      },
       orderBy: {
         createdAt: 'desc',
       },
@@ -111,10 +115,11 @@ export class StudyPacksService {
     });
   }
 
-  async findOne(id: string) {
-    const studyPack = await this.prisma.studyPack.findUnique({
+  async findOne(id: string, ownerId: string) {
+    const studyPack = await this.prisma.studyPack.findFirst({
       where: {
         id,
+        ownerId,
       },
       include: {
         documents: {

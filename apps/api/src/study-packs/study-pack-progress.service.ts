@@ -94,10 +94,14 @@ export class StudyPackProgressService {
     private readonly studySessionsService: StudySessionsService,
   ) {}
 
-  async findOne(studyPackId: string): Promise<StudyPackProgressResult> {
-    const studyPack = await this.prisma.studyPack.findUnique({
+  async findOne(
+    studyPackId: string,
+    ownerId: string,
+  ): Promise<StudyPackProgressResult> {
+    const studyPack = await this.prisma.studyPack.findFirst({
       where: {
         id: studyPackId,
+        ownerId,
       },
 
       select: {

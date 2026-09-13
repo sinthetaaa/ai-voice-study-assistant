@@ -1,3 +1,8 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
+
+import type { PrismaService } from '../prisma/prisma.service';
+import type { StudySessionsService } from '../study-sessions/study-sessions.service';
+
 jest.mock('../prisma/prisma.service', () => ({
   PrismaService: class PrismaService {},
 }));
@@ -6,13 +11,14 @@ jest.mock('../study-sessions/study-sessions.service', () => ({
   StudySessionsService: class StudySessionsService {},
 }));
 
-const { StudyPackProgressService } = require('./study-pack-progress.service');
+const { StudyPackProgressService } =
+  require('./study-pack-progress.service') as typeof import('./study-pack-progress.service');
 
 describe('StudyPackProgressService', () => {
   it('returns historical sessions using persisted concept snapshots', async () => {
     const prisma = {
       studyPack: {
-        findUnique: jest.fn().mockResolvedValue({
+        findFirst: jest.fn().mockResolvedValue({
           id: 'pack-1',
           name: 'Algorithms',
           description: 'Algorithm notes',
@@ -175,9 +181,21 @@ describe('StudyPackProgressService', () => {
       }),
     };
 
-    const service = new StudyPackProgressService(prisma, studySessionsService);
+    const service = new StudyPackProgressService(
+      prisma as unknown as PrismaService,
+      studySessionsService as unknown as StudySessionsService,
+    );
 
-    const result = await service.findOne('pack-1');
+    const result = await service.findOne('pack-1', 'user-1');
+
+    expect(prisma.studyPack.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          id: 'pack-1',
+          ownerId: 'user-1',
+        },
+      }),
+    );
 
     expect(result.normalStudy.sessionCount).toBe(2);
 
@@ -196,15 +214,17 @@ describe('StudyPackProgressService', () => {
       sessionNumber: 2,
     });
 
-    expect(result.history.map((session: any) => session.sessionId)).toEqual([
+    expect(result.history.map((session) => session.sessionId)).toEqual([
       'normal-2',
       'review-1',
       'normal-1',
     ]);
 
-    expect(result.history.map((session: any) => session.sessionNumber)).toEqual(
-      [2, null, 1],
-    );
+    expect(result.history.map((session) => session.sessionNumber)).toEqual([
+      2,
+      null,
+      1,
+    ]);
 
     expect(result.history[2].concepts[0]).toEqual(
       expect.objectContaining({
@@ -227,7 +247,7 @@ describe('StudyPackProgressService', () => {
   it('returns start state and null stale coverage for a pack without sessions', async () => {
     const prisma = {
       studyPack: {
-        findUnique: jest.fn().mockResolvedValue({
+        findFirst: jest.fn().mockResolvedValue({
           id: 'pack-2',
           name: 'Databases',
           description: null,
@@ -256,9 +276,12 @@ describe('StudyPackProgressService', () => {
       getSessionState: jest.fn(),
     };
 
-    const service = new StudyPackProgressService(prisma, studySessionsService);
+    const service = new StudyPackProgressService(
+      prisma as unknown as PrismaService,
+      studySessionsService as unknown as StudySessionsService,
+    );
 
-    const result = await service.findOne('pack-2');
+    const result = await service.findOne('pack-2', 'user-1');
 
     expect(result.coverage).toEqual({
       authoritative: false,
