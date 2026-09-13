@@ -25,6 +25,9 @@ import { LoginDto } from './dto/login.dto';
 
 import { RegisterDto } from './dto/register.dto';
 
+import { Public } from './public.decorator';
+
+@Public()
 @Controller('auth')
 export class AuthController {
   constructor(

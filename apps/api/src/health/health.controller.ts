@@ -6,7 +6,9 @@ import {
 } from '@nestjs/terminus';
 import { ConfigService } from '@nestjs/config';
 import { HealthService } from './health.service';
+import { Public } from '../auth/public.decorator';
 
+@Public()
 @Controller('health')
 export class HealthController {
   constructor(
