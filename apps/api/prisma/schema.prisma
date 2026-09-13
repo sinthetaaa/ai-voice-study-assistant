@@ -8,9 +8,52 @@ datasource db {
   provider = "postgresql"
 }
 
+model User {
+  id String @id @default(uuid())
+
+  email String  @unique
+  name  String?
+
+  // Null keeps the account model compatible with future
+  // external identity providers. Email/password accounts
+  // will always populate this value.
+  passwordHash String?
+
+  studyPacks   StudyPack[]
+  authSessions AuthSession[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model AuthSession {
+  id String @id @default(uuid())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Never persist the raw browser session token.
+  // Authentication stores only its SHA-256 digest.
+  tokenHash String @unique
+
+  expiresAt  DateTime
+  lastUsedAt DateTime @default(now())
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
 model StudyPack {
-  id          String  @id @default(uuid())
-  name        String
+  id   String @id @default(uuid())
+  name String
+
+  // Nullable only during the Phase 6 ownership migration.
+  // Existing pre-auth Study Packs must survive unchanged
+  // until they are explicitly assigned to a real user.
+  ownerId     String?
+  owner       User?   @relation(fields: [ownerId], references: [id], onDelete: Restrict)
   description String?
   goal        String?
 
@@ -28,6 +71,8 @@ model StudyPack {
   hierarchyUpdatedAt         DateTime?
   createdAt                  DateTime                 @default(now())
   updatedAt                  DateTime                 @updatedAt
+
+  @@index([ownerId])
 }
 
 model Document {
