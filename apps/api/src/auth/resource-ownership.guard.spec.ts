@@ -242,6 +242,40 @@ describe('ResourceOwnershipGuard', () => {
     });
   });
 
+  it('hides a foreign Study Session as not found', async () => {
+    requireOwnership({
+      resource: 'STUDY_SESSION',
+      param: 'sessionId',
+    });
+
+    prisma.studySession.findFirst.mockResolvedValue(null);
+
+    await expect(
+      guard.canActivate(
+        contextFor({
+          sessionId: 'foreign-session',
+        }),
+      ),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('hides a foreign evaluation as not found', async () => {
+    requireOwnership({
+      resource: 'EVALUATION',
+      param: 'evaluationId',
+    });
+
+    prisma.answerEvaluation.findFirst.mockResolvedValue(null);
+
+    await expect(
+      guard.canActivate(
+        contextFor({
+          evaluationId: 'foreign-evaluation',
+        }),
+      ),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
   it('rejects ownership checks without an authenticated user', async () => {
     requireOwnership({
       resource: 'STUDY_PACK',
