@@ -5,6 +5,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 
 import { AdaptiveModule } from './adaptive/adaptive.module';
+import { AuthModule } from './auth/auth.module';
 import { ConceptsModule } from './concepts/concepts.module';
 import { DocumentsModule } from './documents/documents.module';
 import { EvaluationsModule } from './evaluations/evaluations.module';
@@ -44,6 +45,8 @@ import { StudySessionsModule } from './study-sessions/study-sessions.module';
     MasteryModule,
 
     AdaptiveModule,
+
+    AuthModule,
 
     RemediationModule,
 
