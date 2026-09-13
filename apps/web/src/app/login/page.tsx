@@ -8,21 +8,43 @@ import { StudyLoopApiError, studyLoopApi } from "@/lib/studyloop-api";
 
 type AuthMode = "LOGIN" | "REGISTER";
 
+function getSafeNextPath() {
+  const candidate = new URLSearchParams(window.location.search).get("next");
+
+  if (!candidate) {
+    return "/";
+  }
+
+  if (!candidate.startsWith("/") || candidate.startsWith("//")) {
+    return "/";
+  }
+
+  try {
+    const destination = new URL(candidate, window.location.origin);
+
+    if (destination.origin !== window.location.origin) {
+      return "/";
+    }
+
+    if (destination.pathname === "/login") {
+      return "/";
+    }
+
+    return destination.pathname + destination.search + destination.hash;
+  } catch {
+    return "/";
+  }
+}
+
 export default function LoginPage() {
   const router = useRouter();
 
   const [mode, setMode] = useState<AuthMode>("LOGIN");
-
   const [name, setName] = useState("");
-
   const [email, setEmail] = useState("");
-
   const [password, setPassword] = useState("");
-
   const [submitting, setSubmitting] = useState(false);
-
   const [checkingSession, setCheckingSession] = useState(true);
-
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -33,7 +55,7 @@ export default function LoginPage() {
         await studyLoopApi.getCurrentUser();
 
         if (!cancelled) {
-          router.replace("/");
+          router.replace(getSafeNextPath());
         }
       } catch (requestError) {
         if (
@@ -97,7 +119,9 @@ export default function LoginPage() {
         });
       }
 
-      router.replace("/");
+      const destination = getSafeNextPath();
+
+      router.replace(destination);
       router.refresh();
     } catch (requestError) {
       if (requestError instanceof StudyLoopApiError) {

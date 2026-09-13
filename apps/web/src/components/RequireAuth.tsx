@@ -51,11 +51,17 @@ async function verifySession(): Promise<SessionCheckResult> {
   }
 }
 
+function getLoginRedirectPath() {
+  const nextPath =
+    window.location.pathname + window.location.search + window.location.hash;
+
+  return `/login?next=${encodeURIComponent(nextPath)}`;
+}
+
 export default function RequireAuth({ children }: { children: ReactNode }) {
   const router = useRouter();
 
   const [state, setState] = useState<AuthGateState>("CHECKING");
-
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -75,7 +81,7 @@ export default function RequireAuth({ children }: { children: ReactNode }) {
       }
 
       if (result.status === "UNAUTHENTICATED") {
-        router.replace("/login");
+        router.replace(getLoginRedirectPath());
 
         return;
       }
@@ -104,7 +110,7 @@ export default function RequireAuth({ children }: { children: ReactNode }) {
     }
 
     if (result.status === "UNAUTHENTICATED") {
-      router.replace("/login");
+      router.replace(getLoginRedirectPath());
 
       return;
     }
@@ -125,7 +131,6 @@ export default function RequireAuth({ children }: { children: ReactNode }) {
         {state === "CHECKING" ? (
           <>
             <span className="small-spinner" />
-
             <p>Checking your session…</p>
           </>
         ) : (
