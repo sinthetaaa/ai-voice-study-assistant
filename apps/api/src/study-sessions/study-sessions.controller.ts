@@ -10,6 +10,8 @@ import {
 
 import { FileInterceptor } from '@nestjs/platform-express';
 
+import { RequireResourceOwnership } from '../auth/resource-ownership.decorator';
+
 import {
   StudyPackReadinessResult,
   StudyPackReadinessService,
@@ -43,6 +45,7 @@ export class StudySessionsController {
     private readonly studySessionVoiceService: StudySessionVoiceService,
   ) {}
 
+  @RequireResourceOwnership('STUDY_PACK', 'studyPackId')
   @Post('study-packs/:studyPackId/sessions')
   async startSession(
     @Param('studyPackId')
@@ -51,6 +54,7 @@ export class StudySessionsController {
     return this.studySessionsService.startSession(studyPackId);
   }
 
+  @RequireResourceOwnership('STUDY_PACK', 'studyPackId')
   @Get('study-packs/:studyPackId/coverage')
   async getStudyPackCoverage(
     @Param('studyPackId')
@@ -59,6 +63,7 @@ export class StudySessionsController {
     return this.studySessionsService.getStudyPackCoverage(studyPackId);
   }
 
+  @RequireResourceOwnership('STUDY_PACK', 'studyPackId')
   @Post('study-packs/:studyPackId/review-sessions')
   async startReviewSession(
     @Param('studyPackId')
@@ -67,6 +72,7 @@ export class StudySessionsController {
     return this.studySessionsService.startReviewSession(studyPackId);
   }
 
+  @RequireResourceOwnership('STUDY_PACK', 'studyPackId')
   @Get('study-packs/:studyPackId/readiness')
   async getStudyPackReadiness(
     @Param('studyPackId')
@@ -75,6 +81,7 @@ export class StudySessionsController {
     return this.studyPackReadinessService.getReadiness(studyPackId);
   }
 
+  @RequireResourceOwnership('STUDY_SESSION', 'sessionId')
   @Post('study-sessions/:sessionId/answer')
   async answerSession(
     @Param('sessionId')
@@ -86,6 +93,7 @@ export class StudySessionsController {
     return this.studySessionsService.answerSession(sessionId, body?.answerText);
   }
 
+  @RequireResourceOwnership('STUDY_SESSION', 'sessionId')
   @Post('study-sessions/:sessionId/question-speech')
   async speakCurrentQuestion(
     @Param('sessionId')
@@ -94,6 +102,7 @@ export class StudySessionsController {
     return this.studySessionVoiceService.synthesizeCurrentQuestion(sessionId);
   }
 
+  @RequireResourceOwnership('STUDY_SESSION', 'sessionId')
   @Post('study-sessions/:sessionId/voice-answer')
   @UseInterceptors(
     FileInterceptor('audio', {
@@ -112,6 +121,7 @@ export class StudySessionsController {
     return this.studySessionVoiceService.answerSession(sessionId, audio);
   }
 
+  @RequireResourceOwnership('STUDY_SESSION', 'sessionId')
   @Get('study-sessions/:sessionId/attempts/:attemptId/sources')
   async getAttemptAnalysisSources(
     @Param('sessionId')
@@ -126,6 +136,7 @@ export class StudySessionsController {
     );
   }
 
+  @RequireResourceOwnership('STUDY_SESSION', 'sessionId')
   @Get('study-sessions/:sessionId')
   async getSession(
     @Param('sessionId')

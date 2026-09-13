@@ -1,11 +1,14 @@
 import { Controller, Param, Post } from '@nestjs/common';
 
+import { RequireResourceOwnership } from '../auth/resource-ownership.decorator';
+
 import {
   QuestionGenerationResult,
   QuestionPreviewResult,
   QuestionsService,
 } from './questions.service';
 
+@RequireResourceOwnership('STUDY_PACK', 'studyPackId')
 @Controller('study-packs/:studyPackId/concepts/:conceptId/questions')
 export class QuestionsController {
   constructor(private readonly questionsService: QuestionsService) {}

@@ -1,7 +1,10 @@
 import { Controller, Param, Post } from '@nestjs/common';
 
+import { RequireResourceOwnership } from '../auth/resource-ownership.decorator';
+
 import { RemediationResult, RemediationService } from './remediation.service';
 
+@RequireResourceOwnership('STUDY_PACK', 'studyPackId')
 @Controller(
   'study-packs/:studyPackId/' + 'concepts/:conceptId/' + 'evaluations',
 )

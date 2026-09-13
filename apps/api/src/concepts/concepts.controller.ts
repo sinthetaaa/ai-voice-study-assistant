@@ -1,5 +1,7 @@
 import { Controller, Get, Param, Post, Query } from '@nestjs/common';
 
+import { RequireResourceOwnership } from '../auth/resource-ownership.decorator';
+
 import {
   ConceptGenerationResult,
   ConceptHierarchyGenerationResult,
@@ -7,6 +9,7 @@ import {
   ConceptsService,
 } from './concepts.service';
 
+@RequireResourceOwnership('STUDY_PACK', 'studyPackId')
 @Controller('study-packs/:studyPackId/concepts')
 export class ConceptsController {
   constructor(private readonly conceptsService: ConceptsService) {}
@@ -24,9 +27,7 @@ export class ConceptsController {
     @Param('studyPackId')
     studyPackId: string,
   ): Promise<ConceptHierarchyGenerationResult | null> {
-    return this.conceptsService.tryGenerateStudyPackHierarchy(
-      studyPackId,
-    );
+    return this.conceptsService.tryGenerateStudyPackHierarchy(studyPackId);
   }
 
   @Post('preview')

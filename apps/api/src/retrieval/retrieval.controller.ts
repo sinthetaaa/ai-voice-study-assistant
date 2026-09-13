@@ -1,8 +1,11 @@
 import { Body, Controller, Param, Post } from '@nestjs/common';
 
+import { RequireResourceOwnership } from '../auth/resource-ownership.decorator';
+
 import { SearchStudyPackDto } from './dto/search-study-pack.dto';
 import { RetrievalService } from './retrieval.service';
 
+@RequireResourceOwnership('STUDY_PACK', 'studyPackId')
 @Controller('study-packs/:studyPackId/search')
 export class RetrievalController {
   constructor(private readonly retrievalService: RetrievalService) {}

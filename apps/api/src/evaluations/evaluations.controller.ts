@@ -1,5 +1,7 @@
 import { Body, Controller, Param, Post } from '@nestjs/common';
 
+import { RequireResourceOwnership } from '../auth/resource-ownership.decorator';
+
 import {
   EvaluationsService,
   PersistedEvaluationResult,
@@ -9,6 +11,7 @@ type EvaluateQuestionBody = {
   answerText?: unknown;
 };
 
+@RequireResourceOwnership('STUDY_PACK', 'studyPackId')
 @Controller(
   'study-packs/:studyPackId/concepts/:conceptId/questions/:questionId',
 )

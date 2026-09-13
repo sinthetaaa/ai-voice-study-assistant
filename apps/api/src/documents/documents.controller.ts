@@ -13,12 +13,15 @@ import {
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import type { Response } from 'express';
+import { RequireResourceOwnership } from '../auth/resource-ownership.decorator';
+
 import { DocumentsService } from './documents.service';
 import {
   isSupportedDocument,
   SUPPORTED_DOCUMENT_EXTENSIONS,
 } from './supported-document-types';
 
+@RequireResourceOwnership('STUDY_PACK', 'studyPackId')
 @Controller('study-packs/:studyPackId/documents')
 export class DocumentsController {
   constructor(private readonly documentsService: DocumentsService) {}
@@ -60,28 +63,19 @@ export class DocumentsController {
     @Res({ passthrough: true })
     response: Response,
   ): Promise<StreamableFile> {
-    const file =
-      await this.documentsService.getDocumentPreview(
-        studyPackId,
-        documentId,
-      );
-
-    response.setHeader(
-      'Content-Type',
-      'application/pdf',
+    const file = await this.documentsService.getDocumentPreview(
+      studyPackId,
+      documentId,
     );
+
+    response.setHeader('Content-Type', 'application/pdf');
 
     response.setHeader(
       'Content-Disposition',
-      `inline; filename*=UTF-8''${encodeURIComponent(
-        file.originalName,
-      )}`,
+      `inline; filename*=UTF-8''${encodeURIComponent(file.originalName)}`,
     );
 
-    response.setHeader(
-      'Cache-Control',
-      'private, max-age=3600',
-    );
+    response.setHeader('Cache-Control', 'private, max-age=3600');
 
     return new StreamableFile(file.buffer);
   }
