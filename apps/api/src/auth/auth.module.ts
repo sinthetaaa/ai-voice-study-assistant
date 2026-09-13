@@ -6,6 +6,8 @@ import { AuthController } from './auth.controller';
 
 import { AuthService } from './auth.service';
 
+import { ResourceOwnershipGuard } from './resource-ownership.guard';
+
 import { SessionAuthGuard } from './session-auth.guard';
 
 @Module({
@@ -17,6 +19,11 @@ import { SessionAuthGuard } from './session-auth.guard';
     {
       provide: APP_GUARD,
       useClass: SessionAuthGuard,
+    },
+
+    {
+      provide: APP_GUARD,
+      useClass: ResourceOwnershipGuard,
     },
   ],
 
