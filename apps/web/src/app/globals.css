@@ -4317,3 +4317,58 @@ span {
 .login-submit:disabled {
   transform: none;
 }
+
+/* ============================================================
+   AUTH ROUTE GUARD
+============================================================ */
+
+.auth-guard-page {
+  min-height: 100vh;
+
+  display: grid;
+
+  place-items: center;
+
+  padding:
+    32px;
+}
+
+.auth-guard-card {
+  position: relative;
+
+  z-index: 2;
+
+  width:
+    min(
+      420px,
+      100%
+    );
+
+  display: grid;
+
+  justify-items: center;
+
+  gap: 18px;
+
+  padding:
+    34px;
+
+  border-radius:
+    24px;
+
+  text-align:
+    center;
+}
+
+.auth-guard-card p {
+  margin: 0;
+
+  color:
+    var(--silver);
+
+  font-size:
+    14px;
+
+  line-height:
+    1.5;
+}
