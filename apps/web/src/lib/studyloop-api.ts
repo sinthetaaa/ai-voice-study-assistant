@@ -1,5 +1,26 @@
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
+export type AuthUser = {
+  id: string;
+  email: string;
+  name: string | null;
+};
+
+export type AuthResponse = {
+  user: AuthUser;
+};
+
+export type LoginInput = {
+  email: string;
+  password: string;
+};
+
+export type RegisterInput = {
+  email: string;
+  password: string;
+  name?: string;
+};
+
 export type ApiDocument = {
   id: string;
 
@@ -618,6 +639,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     response = await fetch(`${API_BASE_URL}${path}`, {
       ...init,
 
+      credentials: "include",
+
       cache: "no-store",
     });
   } catch {
@@ -643,10 +666,48 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new StudyLoopApiError(message, response.status);
   }
 
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
   return response.json() as Promise<T>;
 }
 
 export const studyLoopApi = {
+  getCurrentUser() {
+    return request<AuthResponse>("/auth/me");
+  },
+
+  login(input: LoginInput) {
+    return request<AuthResponse>("/auth/login", {
+      method: "POST",
+
+      headers: {
+        "Content-Type": "application/json",
+      },
+
+      body: JSON.stringify(input),
+    });
+  },
+
+  register(input: RegisterInput) {
+    return request<AuthResponse>("/auth/register", {
+      method: "POST",
+
+      headers: {
+        "Content-Type": "application/json",
+      },
+
+      body: JSON.stringify(input),
+    });
+  },
+
+  logout() {
+    return request<void>("/auth/logout", {
+      method: "POST",
+    });
+  },
+
   getStudyPackOverview() {
     return request<StudyPackOverviewItem[]>("/study-packs/overview");
   },
