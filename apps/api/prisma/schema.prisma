@@ -49,11 +49,8 @@ model StudyPack {
   id   String @id @default(uuid())
   name String
 
-  // Nullable only during the Phase 6 ownership migration.
-  // Existing pre-auth Study Packs must survive unchanged
-  // until they are explicitly assigned to a real user.
-  ownerId     String?
-  owner       User?   @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+  ownerId     String
+  owner       User    @relation(fields: [ownerId], references: [id], onDelete: Restrict)
   description String?
   goal        String?
 

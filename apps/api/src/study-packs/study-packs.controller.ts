@@ -52,14 +52,6 @@ export class StudyPacksController {
     );
   }
 
-  @Post('claim-legacy')
-  claimLegacy(
-    @Req()
-    request: AuthenticatedRequest,
-  ) {
-    return this.studyPacksService.claimLegacyPacks(this.requireUserId(request));
-  }
-
   @Get()
   findAll(
     @Req()

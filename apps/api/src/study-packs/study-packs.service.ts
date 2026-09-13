@@ -1,21 +1,8 @@
-import {
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 
 import { PrismaService } from '../prisma/prisma.service';
 
 import { CreateStudyPackDto } from './dto/create-study-pack.dto';
-
-function hasPrismaErrorCode(error: unknown, code: string): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    (error as { code?: unknown }).code === code
-  );
-}
 
 @Injectable()
 export class StudyPacksService {
@@ -33,68 +20,6 @@ export class StudyPacksService {
         documents: true,
       },
     });
-  }
-
-  async claimLegacyPacks(userId: string): Promise<{ claimedCount: number }> {
-    try {
-      return await this.prisma.$transaction(
-        async (transaction) => {
-          const unownedPackCount = await transaction.studyPack.count({
-            where: {
-              ownerId: null,
-            },
-          });
-
-          if (unownedPackCount === 0) {
-            return {
-              claimedCount: 0,
-            };
-          }
-
-          const userCount = await transaction.user.count();
-
-          if (userCount !== 1) {
-            throw new ConflictException(
-              'Legacy Study Packs can only be claimed while exactly one user exists',
-            );
-          }
-
-          const result = await transaction.studyPack.updateMany({
-            where: {
-              ownerId: null,
-            },
-            data: {
-              ownerId: userId,
-            },
-          });
-
-          if (result.count !== unownedPackCount) {
-            throw new ConflictException(
-              'Legacy Study Pack claim state changed. Please retry',
-            );
-          }
-
-          return {
-            claimedCount: result.count,
-          };
-        },
-        {
-          isolationLevel: 'Serializable',
-        },
-      );
-    } catch (error) {
-      if (error instanceof ConflictException) {
-        throw error;
-      }
-
-      if (hasPrismaErrorCode(error, 'P2034')) {
-        throw new ConflictException(
-          'Legacy Study Pack claim state changed. Please retry',
-        );
-      }
-
-      throw error;
-    }
   }
 
   async findAll(ownerId: string) {
