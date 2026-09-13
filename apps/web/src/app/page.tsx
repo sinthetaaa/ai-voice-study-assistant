@@ -18,6 +18,8 @@ type NavItem = (typeof NAV_ITEMS)[number];
 
 type UploadPhase = "EMPTY" | "UPLOADING" | "PROCESSING" | "READY" | "ERROR";
 
+type HomeAuthState = "CHECKING" | "AUTHENTICATED" | "ANONYMOUS" | "ERROR";
+
 const MAX_FILE_BYTES = 50 * 1024 * 1024;
 
 const MAX_FILES_PER_REQUEST = 10;
@@ -55,6 +57,8 @@ export default function Home() {
 
   const [myStudiesError, setMyStudiesError] = useState<string | null>(null);
 
+  const [homeAuthState, setHomeAuthState] = useState<HomeAuthState>("CHECKING");
+
   const [launchingStudyPackId, setLaunchingStudyPackId] = useState<
     string | null
   >(null);
@@ -71,27 +75,62 @@ export default function Home() {
   useEffect(() => {
     let cancelled = false;
 
-    async function loadMyStudies() {
+    async function loadHomeAccount() {
+      setHomeAuthState("CHECKING");
       setMyStudiesLoading(true);
       setMyStudiesError(null);
 
       try {
-        const overview = await studyLoopApi.getStudyPackOverview();
+        await studyLoopApi.getCurrentUser();
 
-        if (!cancelled) {
-          setStudyPackOverview(overview);
+        if (cancelled) {
+          return;
+        }
+
+        setHomeAuthState("AUTHENTICATED");
+
+        try {
+          const overview = await studyLoopApi.getStudyPackOverview();
+
+          if (!cancelled) {
+            setStudyPackOverview(overview);
+          }
+        } catch (error) {
+          if (cancelled) {
+            return;
+          }
+
+          if (error instanceof StudyLoopApiError && error.status === 401) {
+            setHomeAuthState("ANONYMOUS");
+            setStudyPackOverview([]);
+            setMyStudiesError(null);
+
+            return;
+          }
+
+          if (error instanceof StudyLoopApiError) {
+            setMyStudiesError(error.message);
+          } else {
+            setMyStudiesError("Could not load your saved studies.");
+          }
         }
       } catch (error) {
         if (cancelled) {
           return;
         }
 
-        console.error(error);
-
-        if (error instanceof StudyLoopApiError) {
-          setMyStudiesError(error.message);
+        if (error instanceof StudyLoopApiError && error.status === 401) {
+          setHomeAuthState("ANONYMOUS");
+          setStudyPackOverview([]);
+          setMyStudiesError(null);
         } else {
-          setMyStudiesError("Could not load your saved studies.");
+          setHomeAuthState("ERROR");
+
+          if (error instanceof StudyLoopApiError) {
+            setMyStudiesError(error.message);
+          } else {
+            setMyStudiesError("Could not verify your StudyLoop session.");
+          }
         }
       } finally {
         if (!cancelled) {
@@ -100,7 +139,7 @@ export default function Home() {
       }
     }
 
-    void loadMyStudies();
+    void loadHomeAccount();
 
     return () => {
       cancelled = true;
@@ -139,7 +178,29 @@ export default function Home() {
     router.push("/login");
   }
 
+  function openUploadPicker() {
+    if (homeAuthState === "CHECKING") {
+      return;
+    }
+
+    if (homeAuthState !== "AUTHENTICATED") {
+      router.push("/login");
+
+      return;
+    }
+
+    fileInput.current?.click();
+  }
+
   async function handleFiles(event: ChangeEvent<HTMLInputElement>) {
+    if (homeAuthState !== "AUTHENTICATED") {
+      event.target.value = "";
+
+      router.push("/login");
+
+      return;
+    }
+
     const selectedFiles = Array.from(event.target.files ?? []);
 
     event.target.value = "";
@@ -483,7 +544,36 @@ export default function Home() {
             </p>
           </div>
 
-          {myStudiesLoading ? (
+          {homeAuthState === "ANONYMOUS" ? (
+            <div className="my-studies-empty glass-card">
+              <p>Sign in to see your Study Packs.</p>
+              <span>
+                Your saved sessions, progress and mastery stay connected to your
+                account.
+              </span>
+
+              <button
+                className="primary-pill my-studies-empty-action"
+                onClick={() => router.push("/login")}
+              >
+                Sign In
+                <ArrowIcon />
+              </button>
+            </div>
+          ) : homeAuthState === "ERROR" ? (
+            <div className="my-studies-empty glass-card">
+              <p>Could not check your account.</p>
+              <span>{myStudiesError ?? "Please refresh and try again."}</span>
+
+              <button
+                className="primary-pill my-studies-empty-action"
+                onClick={() => window.location.reload()}
+              >
+                Try Again
+                <ArrowIcon />
+              </button>
+            </div>
+          ) : myStudiesLoading ? (
             <div className="my-studies-loading glass-card">
               <span className="small-spinner" />
               <span>Loading your studies…</span>
@@ -627,7 +717,7 @@ export default function Home() {
             </div>
           )}
 
-          {myStudiesError && (
+          {homeAuthState === "AUTHENTICATED" && myStudiesError && (
             <div className="my-studies-error">{myStudiesError}</div>
           )}
         </div>
@@ -710,12 +800,18 @@ export default function Home() {
 
               <button
                 className="upload-button"
-                disabled={uploadPhase === "UPLOADING"}
-                onClick={() => fileInput.current?.click()}
+                disabled={
+                  uploadPhase === "UPLOADING" || homeAuthState === "CHECKING"
+                }
+                onClick={openUploadPicker}
               >
                 <UploadIcon />
 
-                {uploadPhase === "UPLOADING" ? "Uploading…" : "Upload"}
+                {homeAuthState === "CHECKING"
+                  ? "Checking…"
+                  : uploadPhase === "UPLOADING"
+                    ? "Uploading…"
+                    : "Upload"}
               </button>
 
               <div className="upload-information">
