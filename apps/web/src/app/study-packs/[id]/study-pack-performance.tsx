@@ -114,9 +114,42 @@ export default function StudyPackPerformance({
     performance.answerQuality.averageScore,
   );
 
+  const hasLearningEvidence =
+    performance.mastery.evaluatedConceptCount > 0 ||
+    performance.answerQuality.evaluatedAnswerCount > 0 ||
+    performance.sessionTrend.length > 0;
+
+  const isEmptyPerformance =
+    performance.mastery.activeConceptCount === 0 && !hasLearningEvidence;
+
+  const isEarlyLearning =
+    performance.mastery.activeConceptCount > 0 && !hasLearningEvidence;
+
+  if (isEmptyPerformance) {
+    return (
+      <section className={styles.section}>
+        <PerformanceHeading />
+
+        <PerformanceStateCard
+          eyebrow="NO PERFORMANCE YET"
+          title="Learning evidence will appear here."
+          copy="This Study Pack does not currently have active concepts to evaluate. Once active material is available and evaluated answers are recorded, StudyLoop will build mastery, answer quality and session trends here."
+        />
+      </section>
+    );
+  }
+
   return (
     <section className={styles.section}>
       <PerformanceHeading />
+
+      {isEarlyLearning ? (
+        <PerformanceStateCard
+          eyebrow="EARLY LEARNING"
+          title="Not enough evaluated evidence yet."
+          copy="Active concepts are available, but no evaluated learner answers have been recorded yet. Mastery and answer-quality percentages remain blank until real evidence exists."
+        />
+      ) : null}
 
       <div className={styles.metrics}>
         <PerformanceMetric
@@ -158,18 +191,22 @@ export default function StudyPackPerformance({
         />
       </div>
 
-      <div className={styles.insights}>
-        <InsightCard
-          eyebrow="STRONGEST CORE CONCEPT"
-          concept={performance.hierarchy.strongestCoreConcept}
-        />
+      {performance.hierarchy.current ? (
+        <div className={styles.insights}>
+          <InsightCard
+            eyebrow="STRONGEST CORE CONCEPT"
+            concept={performance.hierarchy.strongestCoreConcept}
+          />
 
-        <InsightCard
-          eyebrow="CURRENT FOCUS"
-          concept={performance.hierarchy.weakestCoreConcept}
-          focus
-        />
-      </div>
+          <InsightCard
+            eyebrow="CURRENT FOCUS"
+            concept={performance.hierarchy.weakestCoreConcept}
+            focus
+          />
+        </div>
+      ) : (
+        <HierarchyStateCard status={performance.hierarchy.status} />
+      )}
 
       <div className={styles.dashboardGrid}>
         <article className={`${styles.trendCard} glass-card`}>
@@ -242,25 +279,31 @@ export default function StudyPackPerformance({
             </div>
           </div>
 
-          <div className={styles.answerBreakdown}>
-            <OutcomeRow
-              label="Correct"
-              value={performance.answerQuality.correctness.correct}
-              total={performance.answerQuality.evaluatedAnswerCount}
-            />
+          {performance.answerQuality.evaluatedAnswerCount === 0 ? (
+            <EmptyPanel>
+              Answer outcomes will appear after the first evaluated response.
+            </EmptyPanel>
+          ) : (
+            <div className={styles.answerBreakdown}>
+              <OutcomeRow
+                label="Correct"
+                value={performance.answerQuality.correctness.correct}
+                total={performance.answerQuality.evaluatedAnswerCount}
+              />
 
-            <OutcomeRow
-              label="Partial"
-              value={performance.answerQuality.correctness.partial}
-              total={performance.answerQuality.evaluatedAnswerCount}
-            />
+              <OutcomeRow
+                label="Partial"
+                value={performance.answerQuality.correctness.partial}
+                total={performance.answerQuality.evaluatedAnswerCount}
+              />
 
-            <OutcomeRow
-              label="Incorrect"
-              value={performance.answerQuality.correctness.incorrect}
-              total={performance.answerQuality.evaluatedAnswerCount}
-            />
-          </div>
+              <OutcomeRow
+                label="Incorrect"
+                value={performance.answerQuality.correctness.incorrect}
+                total={performance.answerQuality.evaluatedAnswerCount}
+              />
+            </div>
+          )}
         </article>
       </div>
 
@@ -273,12 +316,25 @@ export default function StudyPackPerformance({
           </div>
 
           <strong>
-            {performance.hierarchy.topics.length}{" "}
-            {performance.hierarchy.topics.length === 1 ? "topic" : "topics"}
+            {performance.hierarchy.current ? (
+              <>
+                {performance.hierarchy.topics.length}{" "}
+                {performance.hierarchy.topics.length === 1
+                  ? "topic"
+                  : "topics"}
+              </>
+            ) : (
+              "refreshing"
+            )}
           </strong>
         </div>
 
-        {performance.hierarchy.topics.length === 0 ? (
+        {!performance.hierarchy.current ? (
+          <EmptyPanel>
+            Topic performance is temporarily hidden until the hierarchy is
+            current again.
+          </EmptyPanel>
+        ) : performance.hierarchy.topics.length === 0 ? (
           <EmptyPanel>Topic performance is not available yet.</EmptyPanel>
         ) : (
           <div className={styles.topicList}>
@@ -325,14 +381,25 @@ export default function StudyPackPerformance({
           </div>
 
           <strong>
-            {performance.hierarchy.coreConcepts.length}{" "}
-            {performance.hierarchy.coreConcepts.length === 1
-              ? "concept"
-              : "concepts"}
+            {performance.hierarchy.current ? (
+              <>
+                {performance.hierarchy.coreConcepts.length}{" "}
+                {performance.hierarchy.coreConcepts.length === 1
+                  ? "concept"
+                  : "concepts"}
+              </>
+            ) : (
+              "refreshing"
+            )}
           </strong>
         </div>
 
-        {performance.hierarchy.coreConcepts.length === 0 ? (
+        {!performance.hierarchy.current ? (
+          <EmptyPanel>
+            Core Concept performance is temporarily hidden until the hierarchy
+            is current again.
+          </EmptyPanel>
+        ) : performance.hierarchy.coreConcepts.length === 0 ? (
           <EmptyPanel>
             Core Concept performance is not available yet.
           </EmptyPanel>
@@ -345,6 +412,62 @@ export default function StudyPackPerformance({
         )}
       </article>
     </section>
+  );
+}
+
+function PerformanceStateCard({
+  eyebrow,
+  title,
+  copy,
+}: {
+  eyebrow: string;
+  title: string;
+  copy: string;
+}) {
+  return (
+    <article className={`${styles.stateCard} glass-card`}>
+      <span>{eyebrow}</span>
+
+      <strong>{title}</strong>
+
+      <p>{copy}</p>
+    </article>
+  );
+}
+
+function HierarchyStateCard({
+  status,
+}: {
+  status: StudyPackPerformanceResult["hierarchy"]["status"];
+}) {
+  let title = "Hierarchy insights are out of date.";
+  let copy =
+    "A newer Study Pack revision exists than the generated hierarchy. Lifetime mastery, answer quality and session history remain available, but hierarchy-based performance is hidden until the revisions match.";
+
+  if (status === "DIRTY") {
+    title = "Hierarchy insights are waiting to refresh.";
+    copy =
+      "Study Pack material has changed. Lifetime mastery, answer quality and session history remain valid, while Topic and Core Concept performance stays hidden until the hierarchy is current again.";
+  } else if (status === "GENERATING") {
+    title = "Hierarchy insights are rebuilding.";
+    copy =
+      "StudyLoop is generating the latest Topic and Core Concept structure. Lifetime metrics and answer history remain available while hierarchy-based performance refreshes.";
+  } else if (status === "FAILED") {
+    title = "Hierarchy insights need a refresh.";
+    copy =
+      "The latest hierarchy generation failed. Lifetime mastery, answer quality and session history remain available, while Topic and Core Concept performance stays hidden until the hierarchy is rebuilt.";
+  }
+
+  return (
+    <article
+      className={`${styles.stateCard} ${styles.hierarchyStateCard} glass-card`}
+    >
+      <span>HIERARCHY REFRESH</span>
+
+      <strong>{title}</strong>
+
+      <p>{copy}</p>
+    </article>
   );
 }
 
