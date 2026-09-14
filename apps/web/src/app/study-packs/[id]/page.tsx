@@ -12,6 +12,7 @@ import {
 } from "../../../lib/studyloop-api";
 
 import StudyPackManagement from "./study-pack-management";
+import StudyPackPerformance from "./study-pack-performance";
 
 export default function StudyPackProgressPage() {
   const router = useRouter();
@@ -299,6 +300,11 @@ export default function StudyPackProgressPage() {
             </p>
           </article>
         </section>
+
+        <StudyPackPerformance
+          studyPackId={studyPackId}
+          reloadKey={reloadKey}
+        />
 
         <StudyPackManagement
           studyPackId={studyPackId}
