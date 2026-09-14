@@ -198,9 +198,24 @@ Return only the requested structured hierarchy.
             len(concepts)
             <= self.DIRECT_HIERARCHY_LIMIT
         ):
-            return await self._generate_direct(
-                concepts,
-            )
+            try:
+                return await self._generate_direct(
+                    concepts,
+                )
+            except ConceptHierarchyValidationError:
+                # Small hierarchies normally use the richer
+                # direct UUID-preserving response.
+                #
+                # Some local-model responses can still omit
+                # UUIDs even after semantic repair attempts.
+                #
+                # Fall back to positional grouping, where the
+                # model returns only integer positions and
+                # StudyLoop deterministically reattaches every
+                # real atomic Concept ID.
+                return await self._generate_grouped_hierarchy(
+                    concepts,
+                )
 
         result = await self._generate_staged(
             concepts,

@@ -298,13 +298,113 @@ class ConceptHierarchyServiceTest(
                 "semantic validation after retries"
             ),
         ):
-            await service.generate(
+            await service._generate_direct(
                 self.concepts,
             )
 
         self.assertEqual(
             len(provider.calls),
             service.SEMANTIC_ATTEMPTS,
+        )
+
+    async def test_direct_failure_falls_back_to_positional_grouping(
+        self,
+    ) -> None:
+        invalid = valid_result()
+
+        invalid.topics[1].core_concepts[
+            0
+        ].atomic_concept_ids = [
+            "concept-3",
+            "invented-concept",
+        ]
+
+        grouped = ConceptHierarchyGroupingResult(
+            assignments=[
+                ConceptHierarchyGroupingAssignment(
+                    position=1,
+                    local_group=1,
+                    topic_name="Learning Foundations",
+                    core_name="Value Learning",
+                ),
+                ConceptHierarchyGroupingAssignment(
+                    position=2,
+                    local_group=1,
+                    topic_name="Learning Foundations",
+                    core_name="Value Learning",
+                ),
+                ConceptHierarchyGroupingAssignment(
+                    position=3,
+                    local_group=2,
+                    topic_name="Learning Strategies",
+                    core_name="Exploration Strategies",
+                ),
+            ],
+        )
+
+        provider = FakeLlmProvider(
+            [
+                invalid,
+                invalid,
+                grouped,
+            ],
+        )
+
+        service = ConceptHierarchyService(
+            llm_provider=provider,
+        )
+
+        generated = await service.generate(
+            self.concepts,
+        )
+
+        self.assertEqual(
+            len(provider.calls),
+            3,
+        )
+
+        self.assertIs(
+            provider.calls[0][
+                "response_model"
+            ],
+            ConceptHierarchyResult,
+        )
+
+        self.assertIs(
+            provider.calls[1][
+                "response_model"
+            ],
+            ConceptHierarchyResult,
+        )
+
+        self.assertIs(
+            provider.calls[2][
+                "response_model"
+            ],
+            ConceptHierarchyGroupingResult,
+        )
+
+        assigned_ids = [
+            concept_id
+            for topic in generated.topics
+            for core in topic.core_concepts
+            for concept_id in (
+                core.atomic_concept_ids
+            )
+        ]
+
+        self.assertEqual(
+            set(assigned_ids),
+            {
+                "concept-1",
+                "concept-2",
+                "concept-3",
+            },
+        )
+
+        self.assertEqual(
+            len(assigned_ids),
+            3,
         )
 
     async def test_grouping_repairs_missing_position(
@@ -797,7 +897,7 @@ class ConceptHierarchyServiceTest(
             ConceptHierarchyValidationError,
             "unknown atomic concept IDs",
         ):
-            await service.generate(
+            await service._generate_direct(
                 self.concepts,
             )
 
@@ -823,7 +923,7 @@ class ConceptHierarchyServiceTest(
             ConceptHierarchyValidationError,
             "more than once",
         ):
-            await service.generate(
+            await service._generate_direct(
                 self.concepts,
             )
 
@@ -847,7 +947,7 @@ class ConceptHierarchyServiceTest(
             ConceptHierarchyValidationError,
             "omitted atomic concept IDs",
         ):
-            await service.generate(
+            await service._generate_direct(
                 self.concepts,
             )
 
@@ -874,7 +974,7 @@ class ConceptHierarchyServiceTest(
             ConceptHierarchyValidationError,
             "more than once",
         ):
-            await service.generate(
+            await service._generate_direct(
                 self.concepts,
             )
 
@@ -897,7 +997,7 @@ class ConceptHierarchyServiceTest(
             ConceptHierarchyValidationError,
             "duplicate Core Concept name",
         ):
-            await service.generate(
+            await service._generate_direct(
                 self.concepts,
             )
 
