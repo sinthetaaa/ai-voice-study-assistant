@@ -81,7 +81,7 @@ export class LocalStorageService {
   }
 
   async delete(storageKey: string) {
-    await Promise.allSettled([
+    await Promise.all([
       rm(this.resolveStoragePath(storageKey), {
         force: true,
       }),

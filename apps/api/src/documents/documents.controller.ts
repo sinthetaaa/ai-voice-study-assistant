@@ -1,6 +1,9 @@
 import {
   Controller,
+  Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseUUIDPipe,
   Post,
@@ -85,6 +88,18 @@ export class DocumentsController {
     response.setHeader('Cache-Control', 'private, max-age=3600');
 
     return new StreamableFile(file.buffer);
+  }
+
+  @Delete(':documentId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async removeDocument(
+    @Param('studyPackId', new ParseUUIDPipe())
+    studyPackId: string,
+
+    @Param('documentId', new ParseUUIDPipe())
+    documentId: string,
+  ): Promise<void> {
+    await this.documentsService.removeDocument(studyPackId, documentId);
   }
 
   @Post()

@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
@@ -44,6 +45,8 @@ const CONVERTIBLE_PREVIEW_EXTENSIONS = new Set([
 
 @Injectable()
 export class DocumentsService {
+  private readonly logger = new Logger(DocumentsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: LocalStorageService,
@@ -281,6 +284,309 @@ export class DocumentsService {
         recursive: true,
         force: true,
       });
+    }
+  }
+
+  async removeDocument(
+    studyPackId: string,
+    documentId: string,
+  ): Promise<void> {
+    let storageKey: string | null = null;
+    let shouldEnqueueHierarchy = false;
+
+    await this.prisma.$transaction(async (transaction) => {
+      /*
+       * Lock StudyPack first.
+       *
+       * Concept persistence and hierarchy persistence use the
+       * same lock order. This prevents document deletion from
+       * racing a concept mutation for the same Study Pack.
+       *
+       * Updating updatedAt is also correct product behaviour:
+       * removing material changes the Study Pack.
+       */
+      const lockedStudyPack =
+        await transaction.studyPack.updateMany({
+          where: {
+            id: studyPackId,
+          },
+          data: {
+            updatedAt: new Date(),
+          },
+        });
+
+      if (lockedStudyPack.count !== 1) {
+        throw new NotFoundException(
+          `Study pack ${studyPackId} was not found`,
+        );
+      }
+
+      const document =
+        await transaction.document.findFirst({
+          where: {
+            id: documentId,
+            studyPackId,
+          },
+          select: {
+            id: true,
+            storageKey: true,
+          },
+        });
+
+      if (!document) {
+        throw new NotFoundException(
+          `Document ${documentId} was not found in Study Pack ${studyPackId}`,
+        );
+      }
+
+      storageKey = document.storageKey;
+
+      /*
+       * Determine whether this document currently contributes
+       * learner-facing derived state before deleting its chunks.
+       */
+      const conceptSourceCount =
+        await transaction.conceptSource.count({
+          where: {
+            chunk: {
+              unit: {
+                documentId,
+              },
+            },
+          },
+        });
+
+      const questionSourceCount =
+        await transaction.questionSource.count({
+          where: {
+            chunk: {
+              unit: {
+                documentId,
+              },
+            },
+          },
+        });
+
+      const changesHierarchy =
+        conceptSourceCount > 0;
+
+      const changesActiveLearningState =
+        changesHierarchy ||
+        questionSourceCount > 0;
+
+      let invalidatedRevision = 0;
+
+      if (changesHierarchy) {
+        /*
+         * A ConceptSource mutation invalidates the learner-facing
+         * hierarchy exactly once.
+         */
+        const invalidated =
+          await transaction.studyPack.update({
+            where: {
+              id: studyPackId,
+            },
+            data: {
+              hierarchyStatus: 'DIRTY',
+              hierarchyRevision: {
+                increment: 1,
+              },
+              hierarchyErrorMessage: null,
+              hierarchyUpdatedAt: new Date(),
+            },
+            select: {
+              hierarchyRevision: true,
+            },
+          });
+
+        invalidatedRevision =
+          invalidated.hierarchyRevision;
+      }
+
+      if (changesActiveLearningState) {
+        /*
+         * A running session snapshots a learning plan derived
+         * from the old material.
+         *
+         * Removing provenance can invalidate its current question
+         * or a concept that appears later in the sitting, so it
+         * must not remain resumable.
+         *
+         * SessionConceptProgress keeps the historical snapshots.
+         */
+        await transaction.studySession.updateMany({
+          where: {
+            studyPackId,
+            status: 'ACTIVE',
+          },
+          data: {
+            status: 'ABANDONED',
+            currentConceptId: null,
+            currentQuestionId: null,
+          },
+        });
+      }
+
+      /*
+       * DocumentUnit and DocumentChunk cascade from Document.
+       *
+       * ConceptSource and QuestionSource in turn cascade from
+       * DocumentChunk.
+       */
+      await transaction.document.delete({
+        where: {
+          id: document.id,
+        },
+      });
+
+      if (changesHierarchy) {
+        /*
+         * Remove only source-less Concepts that have no learner
+         * or session history.
+         *
+         * This mirrors the safety contract used after concept
+         * regeneration. Historical Concept identities survive.
+         */
+        await transaction.concept.deleteMany({
+          where: {
+            studyPackId,
+            sources: {
+              none: {},
+            },
+            mastery: {
+              is: null,
+            },
+            masteryEvents: {
+              none: {},
+            },
+            questions: {
+              none: {
+                attempts: {
+                  some: {},
+                },
+              },
+            },
+            sessionProgress: {
+              none: {},
+            },
+            currentInSessions: {
+              none: {},
+            },
+          },
+        });
+
+        const activeConceptCount =
+          await transaction.concept.count({
+            where: {
+              studyPackId,
+              sources: {
+                some: {
+                  chunk: {
+                    unit: {
+                      document: {
+                        status: 'READY',
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          });
+
+        if (activeConceptCount === 0) {
+          /*
+           * There is nothing left for the hierarchy AI to
+           * organize.
+           *
+           * Settle an explicit empty authoritative hierarchy
+           * instead of sending a zero-concept generation job
+           * that would fail.
+           */
+          await transaction.concept.updateMany({
+            where: {
+              studyPackId,
+            },
+            data: {
+              coreConceptId: null,
+              positionInCore: null,
+            },
+          });
+
+          await transaction.coreConcept.deleteMany({
+            where: {
+              studyPackId,
+            },
+          });
+
+          await transaction.studyTopic.deleteMany({
+            where: {
+              studyPackId,
+            },
+          });
+
+          await transaction.studyPack.update({
+            where: {
+              id: studyPackId,
+            },
+            data: {
+              hierarchyStatus: 'READY',
+              hierarchyGeneratedRevision:
+                invalidatedRevision,
+              hierarchyErrorMessage: null,
+              hierarchyUpdatedAt: new Date(),
+            },
+          });
+        } else {
+          shouldEnqueueHierarchy = true;
+        }
+      }
+    });
+
+    /*
+     * PostgreSQL owns lifecycle truth.
+     *
+     * Physical file cleanup happens only after commit.
+     */
+    if (storageKey) {
+      try {
+        await this.storage.delete(storageKey);
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : String(error);
+
+        this.logger.error(
+          `Document ${documentId} was deleted, but its local ` +
+            `storage artifacts could not be removed: ${message}`,
+        );
+      }
+    }
+
+    if (shouldEnqueueHierarchy) {
+      try {
+        await this.ingestionQueue.enqueueStudyPackHierarchy(
+          studyPackId,
+        );
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : String(error);
+
+        /*
+         * The committed deletion remains valid.
+         *
+         * The hierarchy stays DIRTY and can be retried by the
+         * explicit hierarchy endpoint rather than returning a
+         * misleading failed DELETE response.
+         */
+        this.logger.error(
+          `Document ${documentId} was deleted, but hierarchy ` +
+            `generation could not be queued for Study Pack ` +
+            `${studyPackId}: ${message}`,
+        );
+      }
     }
   }
 
