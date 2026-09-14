@@ -22,6 +22,7 @@ import { promisify } from 'node:util';
 import { PrismaService } from '../prisma/prisma.service';
 import { LocalStorageService } from '../storage/local-storage.service';
 import { IngestionQueueService } from '../ingestion/ingestion-queue.service';
+import { partitionDocumentUploads } from './document-upload-policy';
 
 const execFileAsync = promisify(execFile);
 
@@ -289,7 +290,7 @@ export class DocumentsService {
   ) {
     if (!files || files.length === 0) {
       throw new BadRequestException(
-        'At least one supported document must be uploaded',
+        'At least one document must be uploaded',
       );
     }
 
@@ -309,6 +310,20 @@ export class DocumentsService {
       );
     }
 
+    const {
+      acceptedFiles,
+      rejected,
+    } = partitionDocumentUploads(files);
+
+    if (acceptedFiles.length === 0) {
+      return {
+        studyPackId,
+        uploaded: 0,
+        documents: [],
+        rejected,
+      };
+    }
+
     const storedFiles: {
       file: Express.Multer.File;
       storageKey: string;
@@ -317,7 +332,7 @@ export class DocumentsService {
     let createdDocumentIds: string[] = [];
 
     try {
-      for (const file of files) {
+      for (const file of acceptedFiles) {
         const stored =
           await this.storage.saveDocument(
             studyPackId,
@@ -360,6 +375,7 @@ export class DocumentsService {
         studyPackId,
         uploaded: documents.length,
         documents,
+        rejected,
       };
     } catch (error) {
       if (createdDocumentIds.length > 0) {

@@ -251,13 +251,24 @@ export default function Home() {
       return;
     }
 
-    const oversized = selectedFiles.find((file) => file.size > MAX_FILE_BYTES);
+    const oversizedFiles = selectedFiles.filter(
+      (file) => file.size > MAX_FILE_BYTES,
+    );
 
-    if (oversized) {
+    const uploadCandidates = selectedFiles.filter(
+      (file) => file.size <= MAX_FILE_BYTES,
+    );
+
+    if (uploadCandidates.length === 0) {
       setUploadPhase("ERROR");
+      setUploadMessage("No files were uploaded.");
 
       setErrorMessage(
-        `${oversized.name} is larger than the 50 MB per-file limit.`,
+        `Skipped ${oversizedFiles.length} file${
+          oversizedFiles.length === 1 ? "" : "s"
+        }: ${oversizedFiles
+          .map((file) => `${file.name} (over 50 MB)`)
+          .join(", ")}`,
       );
 
       return;
@@ -289,7 +300,7 @@ export default function Home() {
 
       const uploaded = await studyLoopApi.uploadDocuments(
         activeStudyPackId,
-        selectedFiles,
+        uploadCandidates,
       );
 
       setDocuments((current) => {
@@ -303,6 +314,35 @@ export default function Home() {
 
         return Array.from(byId.values());
       });
+
+      const rejectedSummary = [
+        ...oversizedFiles.map(
+          (file) => `${file.name} (over 50 MB)`,
+        ),
+        ...uploaded.rejected.map((file) => {
+          const reason =
+            file.reason === "FILE_TOO_LARGE"
+              ? "over 50 MB"
+              : "unsupported type";
+
+          return `${file.originalName} (${reason})`;
+        }),
+      ];
+
+      if (rejectedSummary.length > 0) {
+        setErrorMessage(
+          `Skipped ${rejectedSummary.length} file${
+            rejectedSummary.length === 1 ? "" : "s"
+          }: ${rejectedSummary.join(", ")}`,
+        );
+      }
+
+      if (uploaded.uploaded === 0) {
+        setUploadPhase("ERROR");
+        setUploadMessage("No files were uploaded.");
+
+        return;
+      }
 
       setUploadPhase("PROCESSING");
 

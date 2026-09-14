@@ -49,12 +49,26 @@ export type StudyPack = {
   documents: ApiDocument[];
 };
 
+export type DocumentUploadRejection = {
+  originalName: string;
+
+  mimeType: string;
+
+  sizeBytes: number;
+
+  reason:
+    | "UNSUPPORTED_TYPE"
+    | "FILE_TOO_LARGE";
+};
+
 export type UploadDocumentsResult = {
   studyPackId: string;
 
   uploaded: number;
 
   documents: ApiDocument[];
+
+  rejected: DocumentUploadRejection[];
 };
 
 export type ReadinessResult = {

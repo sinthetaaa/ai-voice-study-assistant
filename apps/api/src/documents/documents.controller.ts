@@ -7,19 +7,18 @@ import {
   Res,
   StreamableFile,
   UploadedFiles,
-  UnsupportedMediaTypeException,
   UseInterceptors,
 } from '@nestjs/common';
 import { FilesInterceptor } from '@nestjs/platform-express';
-import { memoryStorage } from 'multer';
 import type { Response } from 'express';
 import { RequireResourceOwnership } from '../auth/resource-ownership.decorator';
 
 import { DocumentsService } from './documents.service';
+import { boundedDocumentMemoryStorage } from './bounded-document-memory.storage';
 import {
-  isSupportedDocument,
-  SUPPORTED_DOCUMENT_EXTENSIONS,
-} from './supported-document-types';
+  DOCUMENT_UPLOAD_HARD_FILE_BYTES,
+  MAX_DOCUMENT_FILES_PER_REQUEST,
+} from './document-upload-policy';
 
 @RequireResourceOwnership('STUDY_PACK', 'studyPackId')
 @Controller('study-packs/:studyPackId/documents')
@@ -90,29 +89,17 @@ export class DocumentsController {
 
   @Post()
   @UseInterceptors(
-    FilesInterceptor('files', 10, {
-      storage: memoryStorage(),
-
+    FilesInterceptor('files', MAX_DOCUMENT_FILES_PER_REQUEST, {
+      storage: boundedDocumentMemoryStorage(),
       limits: {
-        // Maximum supported document size: 50 MB per file.
-        fileSize: 50 * 1024 * 1024,
-      },
-
-      fileFilter: (_request, file, callback) => {
-        if (!isSupportedDocument(file)) {
-          callback(
-            new UnsupportedMediaTypeException(
-              `Unsupported file type. Supported formats: ${SUPPORTED_DOCUMENT_EXTENSIONS.join(
-                ', ',
-              )}`,
-            ),
-            false,
-          );
-
-          return;
-        }
-
-        callback(null, true);
+        /*
+         * Files above the 50 MB product limit are handled as
+         * per-file rejections by boundedDocumentMemoryStorage.
+         *
+         * This higher ceiling remains as a hard transport guard
+         * against unbounded multipart uploads.
+         */
+        fileSize: DOCUMENT_UPLOAD_HARD_FILE_BYTES,
       },
     }),
   )
