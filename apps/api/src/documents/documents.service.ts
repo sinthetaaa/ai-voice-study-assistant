@@ -49,6 +49,30 @@ export class DocumentsService {
     private readonly ingestionQueue: IngestionQueueService,
   ) {}
 
+  async listDocuments(studyPackId: string) {
+    return this.prisma.document.findMany({
+      where: {
+        studyPackId,
+      },
+      select: {
+        id: true,
+        studyPackId: true,
+        originalName: true,
+        mimeType: true,
+        sizeBytes: true,
+        status: true,
+        errorMessage: true,
+        conceptStatus: true,
+        conceptErrorMessage: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+      orderBy: {
+        createdAt: 'asc',
+      },
+    });
+  }
+
   private async findDocument(
     studyPackId: string,
     documentId: string,

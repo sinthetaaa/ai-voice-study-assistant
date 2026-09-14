@@ -24,7 +24,7 @@ describe('derived resource ownership route contract', () => {
   const classGuarded: ClassGuardedController[] = [
     {
       file: 'documents/documents.controller.ts',
-      routeCount: 3,
+      routeCount: 4,
     },
     {
       file: 'concepts/concepts.controller.ts',
@@ -132,7 +132,7 @@ describe('derived resource ownership route contract', () => {
       routeCount += count;
     }
 
-    expect(routeCount).toBe(13);
+    expect(routeCount).toBe(14);
   });
 
   it('protects every mixed controller route with the correct ownership root', () => {
@@ -145,12 +145,12 @@ describe('derived resource ownership route contract', () => {
     expect(methodGuarded).toHaveLength(12);
   });
 
-  it('covers exactly twenty-five derived resource routes', () => {
+  it('covers exactly twenty-six derived resource routes', () => {
     const classRouteCount = classGuarded.reduce(
       (sum, item) => sum + item.routeCount,
       0,
     );
 
-    expect(classRouteCount + methodGuarded.length).toBe(25);
+    expect(classRouteCount + methodGuarded.length).toBe(26);
   });
 });

@@ -26,6 +26,14 @@ import {
 export class DocumentsController {
   constructor(private readonly documentsService: DocumentsService) {}
 
+  @Get()
+  listDocuments(
+    @Param('studyPackId', new ParseUUIDPipe())
+    studyPackId: string,
+  ) {
+    return this.documentsService.listDocuments(studyPackId);
+  }
+
   @Get(':documentId/file')
   async getDocumentFile(
     @Param('studyPackId', new ParseUUIDPipe())
