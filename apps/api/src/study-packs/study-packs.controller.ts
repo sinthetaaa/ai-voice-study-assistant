@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Param,
+  Patch,
   Post,
   Req,
   UnauthorizedException,
@@ -11,6 +12,7 @@ import {
 import type { AuthenticatedRequest } from '../auth/session-auth.guard';
 
 import { CreateStudyPackDto } from './dto/create-study-pack.dto';
+import { UpdateStudyPackDto } from './dto/update-study-pack.dto';
 
 import { StudyPackOverviewService } from './study-pack-overview.service';
 
@@ -49,6 +51,22 @@ export class StudyPacksController {
     return this.studyPacksService.create(
       createStudyPackDto,
       this.requireUserId(request),
+    );
+  }
+
+  @Patch(':id')
+  update(
+    @Req()
+    request: AuthenticatedRequest,
+    @Param('id')
+    id: string,
+    @Body()
+    updateStudyPackDto: UpdateStudyPackDto,
+  ) {
+    return this.studyPacksService.update(
+      id,
+      this.requireUserId(request),
+      updateStudyPackDto,
     );
   }
 
