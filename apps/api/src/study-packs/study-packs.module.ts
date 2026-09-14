@@ -4,6 +4,7 @@ import { StorageModule } from '../storage/storage.module';
 import { StudySessionsModule } from '../study-sessions/study-sessions.module';
 import { StudyPackDeletionService } from './study-pack-deletion.service';
 import { StudyPackOverviewService } from './study-pack-overview.service';
+import { StudyPackPerformanceService } from './study-pack-performance.service';
 import { StudyPackProgressService } from './study-pack-progress.service';
 import { StudyPacksController } from './study-packs.controller';
 import { StudyPacksService } from './study-packs.service';
@@ -15,6 +16,7 @@ import { StudyPacksService } from './study-packs.service';
     StudyPacksService,
     StudyPackDeletionService,
     StudyPackOverviewService,
+    StudyPackPerformanceService,
     StudyPackProgressService,
   ],
 })

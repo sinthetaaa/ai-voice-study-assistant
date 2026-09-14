@@ -20,6 +20,7 @@ import { UpdateStudyPackDto } from './dto/update-study-pack.dto';
 
 import { StudyPackDeletionService } from './study-pack-deletion.service';
 import { StudyPackOverviewService } from './study-pack-overview.service';
+import { StudyPackPerformanceService } from './study-pack-performance.service';
 
 import { StudyPackProgressService } from './study-pack-progress.service';
 
@@ -32,6 +33,8 @@ export class StudyPacksController {
     private readonly studyPackDeletionService: StudyPackDeletionService,
 
     private readonly studyPackOverviewService: StudyPackOverviewService,
+
+    private readonly studyPackPerformanceService: StudyPackPerformanceService,
 
     private readonly studyPackProgressService: StudyPackProgressService,
   ) {}
@@ -101,6 +104,20 @@ export class StudyPacksController {
     request: AuthenticatedRequest,
   ) {
     return this.studyPackOverviewService.findAll(this.requireUserId(request));
+  }
+
+  @Get(':id/performance')
+  findPerformance(
+    @Req()
+    request: AuthenticatedRequest,
+
+    @Param('id')
+    id: string,
+  ) {
+    return this.studyPackPerformanceService.findOne(
+      id,
+      this.requireUserId(request),
+    );
   }
 
   @Get(':id/progress')
