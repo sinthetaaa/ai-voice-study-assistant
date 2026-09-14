@@ -370,59 +370,65 @@ export default function Home() {
         setReadiness(snapshot);
 
         /*
-         * The upload pipeline has two distinct stages:
+         * Readiness is authoritative on the backend.
          *
-         * 1. Document ingestion:
-         *    parse + chunk + embed
+         * It combines:
+         * - material ingestion
+         * - concept extraction
+         * - hierarchy generation/revision
+         * - availability of active study concepts
          *
-         * 2. Study preparation:
-         *    concept extraction + persistence
-         *
-         * A Document with status READY means stage 1
-         * finished. It does NOT yet mean the Study Pack
-         * is ready for learning.
+         * Question sets may still be prepared lazily
+         * when a bounded Normal Study session starts.
          */
-        if (snapshot.counts.activeConceptCount > 0) {
+        if (
+          snapshot.overallState === "NORMAL_STUDY_AVAILABLE" ||
+          snapshot.overallState === "NORMAL_STUDY_COMPLETE"
+        ) {
           setUploadPhase("READY");
-
           setUploadMessage("Your material is ready.");
-
           stopReadinessPoll();
 
           return;
         }
 
-        const currentDocuments = pack.documents ?? [];
-
-        const failedDocuments = currentDocuments.filter(
-          (document) =>
-            document.status === "FAILED" || document.status === "ERROR",
-        );
-
-        if (failedDocuments.length > 0) {
+        if (snapshot.overallState === "PREPARATION_FAILED") {
           setUploadPhase("ERROR");
-
-          setErrorMessage("One or more documents could not be processed.");
-
+          setUploadMessage("Study material preparation failed.");
+          setErrorMessage(
+            "StudyLoop could not finish preparing this Study Pack.",
+          );
           stopReadinessPoll();
 
           return;
         }
 
-        const allDocumentsReady =
-          currentDocuments.length > 0 &&
-          currentDocuments.every((document) => document.status === "READY");
+        if (snapshot.overallState === "NO_ACTIVE_CONCEPTS") {
+          setUploadPhase("ERROR");
+          setUploadMessage("No study concepts were prepared.");
+          setErrorMessage(
+            "StudyLoop could not find usable study concepts in this material.",
+          );
+          stopReadinessPoll();
 
-        const anyDocumentProcessing = currentDocuments.some(
-          (document) => document.status === "PROCESSING" || !document.status,
-        );
+          return;
+        }
 
         setUploadPhase("PROCESSING");
 
-        if (allDocumentsReady) {
-          setUploadMessage("Understanding key concepts…");
-        } else if (anyDocumentProcessing) {
+        if (
+          snapshot.preparation.documents.uploaded > 0 ||
+          snapshot.preparation.documents.processing > 0
+        ) {
           setUploadMessage("Reading your material…");
+        } else if (
+          !snapshot.preparation.conceptExtraction.settled
+        ) {
+          setUploadMessage("Understanding key concepts…");
+        } else if (
+          snapshot.preparation.hierarchy.status === "GENERATING"
+        ) {
+          setUploadMessage("Organizing your study material…");
         } else {
           setUploadMessage("Preparing your study material…");
         }

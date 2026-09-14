@@ -7,6 +7,13 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 
 import {
+  buildStudyPackPreparationSnapshot,
+  determineStudyPackReadinessOverallState,
+  type StudyPackPreparationSnapshot,
+  type StudyPackReadinessOverallState,
+} from './study-pack-readiness-policy';
+
+import {
   classifyStudyReadiness,
   StudyReadinessState,
 } from './study-session-readiness';
@@ -19,11 +26,6 @@ const REQUIRED_QUESTION_TYPES = [
 
 type RequiredQuestionType = (typeof REQUIRED_QUESTION_TYPES)[number];
 
-export type StudyPackReadinessOverallState =
-  | 'NO_ACTIVE_CONCEPTS'
-  | 'PREPARATION_INCOMPLETE'
-  | 'NORMAL_STUDY_AVAILABLE'
-  | 'NORMAL_STUDY_COMPLETE';
 
 export type StudyPackConceptReadiness = {
   id: string;
@@ -73,6 +75,8 @@ export type StudyPackReadinessResult = {
   studyPackId: string;
 
   overallState: StudyPackReadinessOverallState;
+
+  preparation: StudyPackPreparationSnapshot;
 
   thresholds: {
     masteryScore: number;
@@ -125,12 +129,40 @@ export class StudyPackReadinessService {
 
       select: {
         id: true,
+
+        hierarchyStatus: true,
+
+        hierarchyRevision: true,
+
+        hierarchyGeneratedRevision: true,
+
+        documents: {
+          select: {
+            status: true,
+
+            conceptStatus: true,
+          },
+        },
       },
     });
 
     if (!studyPack) {
       throw new NotFoundException(`Study Pack ${studyPackId} was not found`);
     }
+
+    const preparation =
+      buildStudyPackPreparationSnapshot({
+        documents: studyPack.documents,
+
+        hierarchyStatus:
+          studyPack.hierarchyStatus,
+
+        hierarchyRevision:
+          studyPack.hierarchyRevision,
+
+        hierarchyGeneratedRevision:
+          studyPack.hierarchyGeneratedRevision,
+      });
 
     const now = new Date();
 
@@ -340,13 +372,14 @@ export class StudyPackReadinessService {
     ).length;
 
     /*
-     * Normal study can only use concepts that:
+     * Question readiness is intentionally not a
+     * Normal Study availability gate.
      *
-     * 1. have all three READY-backed question
-     *    levels, and
-     * 2. do not already satisfy secure mastery.
+     * The bounded session planner selects active
+     * concepts first and prepares missing question
+     * sets lazily for the selected batch.
      */
-    const normalStudyConceptCount = questionReadyConcepts.filter(
+    const normalStudyConceptCount = conceptSnapshots.filter(
       (concept) => concept.readiness.needsNormalStudy,
     ).length;
 
@@ -367,16 +400,19 @@ export class StudyPackReadinessService {
         ? 0
         : questionReadyConceptCount / activeConceptCount;
 
-    const overallState = this.determineOverallState(
-      activeConceptCount,
-      conceptsNeedingQuestionPreparation,
-      normalStudyConceptCount,
-    );
+    const overallState =
+      determineStudyPackReadinessOverallState(
+        preparation.state,
+        activeConceptCount,
+        normalStudyConceptCount,
+      );
 
     return {
       studyPackId,
 
       overallState,
+
+      preparation,
 
       thresholds: {
         masteryScore: ADVANCE_MASTERY_THRESHOLD,
@@ -418,29 +454,5 @@ export class StudyPackReadinessService {
     };
   }
 
-  private determineOverallState(
-    activeConceptCount: number,
-    conceptsNeedingQuestionPreparation: number,
-    normalStudyConceptCount: number,
-  ): StudyPackReadinessOverallState {
-    if (activeConceptCount === 0) {
-      return 'NO_ACTIVE_CONCEPTS';
-    }
 
-    /*
-     * Preparation takes precedence because a
-     * pack should never appear fully ready while
-     * some active concepts have not yet received
-     * their complete question set.
-     */
-    if (conceptsNeedingQuestionPreparation > 0) {
-      return 'PREPARATION_INCOMPLETE';
-    }
-
-    if (normalStudyConceptCount > 0) {
-      return 'NORMAL_STUDY_AVAILABLE';
-    }
-
-    return 'NORMAL_STUDY_COMPLETE';
-  }
 }

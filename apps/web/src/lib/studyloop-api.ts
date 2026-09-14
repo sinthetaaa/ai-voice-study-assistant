@@ -77,8 +77,49 @@ export type ReadinessResult = {
   overallState:
     | "NO_ACTIVE_CONCEPTS"
     | "PREPARATION_INCOMPLETE"
+    | "PREPARATION_FAILED"
     | "NORMAL_STUDY_AVAILABLE"
     | "NORMAL_STUDY_COMPLETE";
+
+  preparation: {
+    state:
+      | "INCOMPLETE"
+      | "READY"
+      | "FAILED";
+
+    hasWarnings: boolean;
+
+    documents: {
+      total: number;
+      uploaded: number;
+      processing: number;
+      ready: number;
+      failed: number;
+      settled: boolean;
+    };
+
+    conceptExtraction: {
+      pending: number;
+      processing: number;
+      ready: number;
+      failed: number;
+      settled: boolean;
+    };
+
+    hierarchy: {
+      status:
+        | "DIRTY"
+        | "GENERATING"
+        | "READY"
+        | "FAILED";
+
+      revision: number;
+
+      generatedRevision: number | null;
+
+      current: boolean;
+    };
+  };
 
   counts: {
     activeConceptCount: number;
