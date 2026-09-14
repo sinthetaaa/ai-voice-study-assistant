@@ -20,6 +20,12 @@ describe('StudyPackPerformanceService', () => {
 
           name: 'Operating Systems',
 
+          hierarchyStatus: 'READY',
+
+          hierarchyRevision: 3,
+
+          hierarchyGeneratedRevision: 3,
+
           concepts: [
             {
               id: 'concept-1',
@@ -284,6 +290,12 @@ describe('StudyPackPerformanceService', () => {
         id: true,
 
         name: true,
+
+        hierarchyStatus: true,
+
+        hierarchyRevision: true,
+
+        hierarchyGeneratedRevision: true,
 
         concepts: {
           where: {
@@ -562,6 +574,16 @@ describe('StudyPackPerformanceService', () => {
       },
     ]);
 
+    expect(result.hierarchy).toMatchObject({
+      status: 'READY',
+
+      revision: 3,
+
+      generatedRevision: 3,
+
+      current: true,
+    });
+
     expect(result.hierarchy.topics).toEqual([
       {
         id: 'topic-os',
@@ -745,6 +767,12 @@ describe('StudyPackPerformanceService', () => {
 
           name: 'Databases',
 
+          hierarchyStatus: 'READY',
+
+          hierarchyRevision: 2,
+
+          hierarchyGeneratedRevision: 1,
+
           concepts: [],
         }),
       },
@@ -803,6 +831,14 @@ describe('StudyPackPerformanceService', () => {
     expect(result.sessionTrend).toEqual([]);
 
     expect(result.hierarchy).toEqual({
+      status: 'READY',
+
+      revision: 2,
+
+      generatedRevision: 1,
+
+      current: false,
+
       topics: [],
 
       coreConcepts: [],

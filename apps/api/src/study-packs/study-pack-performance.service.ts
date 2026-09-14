@@ -53,6 +53,16 @@ export type StudyPackPerformanceSessionTrendPoint = {
   answerQuality: PerformanceAnswerSummary;
 };
 
+export type StudyPackPerformanceHierarchy = PerformanceHierarchySummary & {
+  status: 'DIRTY' | 'GENERATING' | 'READY' | 'FAILED';
+
+  revision: number;
+
+  generatedRevision: number | null;
+
+  current: boolean;
+};
+
 export type StudyPackPerformanceResult = {
   studyPack: {
     id: string;
@@ -66,7 +76,7 @@ export type StudyPackPerformanceResult = {
 
   sessionTrend: StudyPackPerformanceSessionTrendPoint[];
 
-  hierarchy: PerformanceHierarchySummary;
+  hierarchy: StudyPackPerformanceHierarchy;
 
   concepts: StudyPackPerformanceConcept[];
 };
@@ -91,6 +101,12 @@ export class StudyPackPerformanceService {
         id: true,
 
         name: true,
+
+        hierarchyStatus: true,
+
+        hierarchyRevision: true,
+
+        hierarchyGeneratedRevision: true,
 
         concepts: {
           where: {
@@ -329,7 +345,21 @@ export class StudyPackPerformanceService {
 
     const answerQuality = summarizePerformanceAnswers(evaluations);
 
-    const hierarchy = summarizePerformanceHierarchy(hierarchyTopics);
+    const hierarchySummary = summarizePerformanceHierarchy(hierarchyTopics);
+
+    const hierarchy: StudyPackPerformanceHierarchy = {
+      status: studyPack.hierarchyStatus,
+
+      revision: studyPack.hierarchyRevision,
+
+      generatedRevision: studyPack.hierarchyGeneratedRevision,
+
+      current:
+        studyPack.hierarchyStatus === 'READY' &&
+        studyPack.hierarchyGeneratedRevision === studyPack.hierarchyRevision,
+
+      ...hierarchySummary,
+    };
 
     const sessionTrend: StudyPackPerformanceSessionTrendPoint[] = [];
 

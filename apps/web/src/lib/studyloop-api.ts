@@ -601,6 +601,14 @@ export type StudyPackPerformanceResult = {
   sessionTrend: StudyPackPerformanceSessionTrendPoint[];
 
   hierarchy: {
+    status: "DIRTY" | "GENERATING" | "READY" | "FAILED";
+
+    revision: number;
+
+    generatedRevision: number | null;
+
+    current: boolean;
+
     topics: StudyPackPerformanceTopic[];
 
     coreConcepts: StudyPackPerformanceCoreConcept[];
