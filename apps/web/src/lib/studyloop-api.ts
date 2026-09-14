@@ -451,6 +451,168 @@ export type StudyPackProgressResult = {
   history: StudyPackProgressHistorySession[];
 };
 
+export type StudyPackPerformanceAnswerSummary = {
+  evaluatedAnswerCount: number;
+
+  averageScore: number | null;
+
+  correctness: {
+    correct: number;
+
+    partial: number;
+
+    incorrect: number;
+  };
+};
+
+export type StudyPackPerformanceMasterySummary = {
+  activeConceptCount: number;
+
+  evaluatedConceptCount: number;
+
+  unevaluatedConceptCount: number;
+
+  averageMastery: number | null;
+
+  totalMasteryAttempts: number;
+
+  totalEvidenceWeight: number;
+
+  scheduledReviewCount: number;
+
+  dueReviewCount: number;
+};
+
+export type StudyPackPerformanceConcept = {
+  id: string;
+
+  name: string;
+
+  importance: number;
+
+  difficulty: "FOUNDATIONAL" | "INTERMEDIATE" | "ADVANCED";
+
+  mastery: {
+    score: number;
+
+    evidenceWeight: number;
+
+    attemptCount: number;
+
+    reviewDueAt: string | null;
+
+    lastReviewedAt: string | null;
+
+    dueForReview: boolean;
+  } | null;
+};
+
+export type StudyPackPerformanceSessionTrendPoint = {
+  sessionId: string;
+
+  sessionNumber: number | null;
+
+  kind: "NORMAL" | "REVIEW";
+
+  status: "ACTIVE" | "COMPLETED" | "ABANDONED";
+
+  startedAt: string;
+
+  completedAt: string | null;
+
+  answerQuality: StudyPackPerformanceAnswerSummary;
+};
+
+export type StudyPackPerformanceTopic = {
+  id: string;
+
+  name: string;
+
+  position: number;
+
+  coreConceptCount: number;
+
+  evaluatedCoreConceptCount: number;
+
+  unevaluatedCoreConceptCount: number;
+
+  atomicConceptCount: number;
+
+  evaluatedAtomicConceptCount: number;
+
+  averageMastery: number | null;
+};
+
+export type StudyPackPerformanceCoreConcept = {
+  id: string;
+
+  name: string;
+
+  topicId: string;
+
+  topicName: string;
+
+  topicPosition: number;
+
+  importance: number;
+
+  position: number;
+
+  atomicConceptCount: number;
+
+  evaluatedAtomicConceptCount: number;
+
+  unevaluatedAtomicConceptCount: number;
+
+  averageMastery: number | null;
+
+  totalAttemptCount: number;
+
+  totalEvidenceWeight: number;
+};
+
+export type StudyPackPerformanceCoreConceptHighlight = {
+  id: string;
+
+  name: string;
+
+  topicId: string;
+
+  topicName: string;
+
+  averageMastery: number;
+
+  evaluatedAtomicConceptCount: number;
+
+  atomicConceptCount: number;
+};
+
+export type StudyPackPerformanceResult = {
+  studyPack: {
+    id: string;
+
+    name: string;
+  };
+
+  mastery: StudyPackPerformanceMasterySummary;
+
+  answerQuality: StudyPackPerformanceAnswerSummary;
+
+  sessionTrend: StudyPackPerformanceSessionTrendPoint[];
+
+  hierarchy: {
+    topics: StudyPackPerformanceTopic[];
+
+    coreConcepts: StudyPackPerformanceCoreConcept[];
+
+    strongestCoreConcept: StudyPackPerformanceCoreConceptHighlight | null;
+
+    weakestCoreConcept: StudyPackPerformanceCoreConceptHighlight | null;
+  };
+
+  concepts: StudyPackPerformanceConcept[];
+};
+
 export type StudySession = {
   sessionId: string;
 
@@ -810,6 +972,12 @@ export const studyLoopApi = {
   getStudyPackProgress(studyPackId: string) {
     return request<StudyPackProgressResult>(
       `/study-packs/${encodeURIComponent(studyPackId)}/progress`,
+    );
+  },
+
+  getStudyPackPerformance(studyPackId: string) {
+    return request<StudyPackPerformanceResult>(
+      `/study-packs/${encodeURIComponent(studyPackId)}/performance`,
     );
   },
 
