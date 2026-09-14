@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { useParams, useRouter } from "next/navigation";
 
@@ -10,6 +10,8 @@ import {
   StudyPackProgressResult,
   studyLoopApi,
 } from "../../../lib/studyloop-api";
+
+import StudyPackManagement from "./study-pack-management";
 
 export default function StudyPackProgressPage() {
   const router = useRouter();
@@ -25,6 +27,13 @@ export default function StudyPackProgressPage() {
   const [launchError, setLaunchError] = useState<string | null>(null);
   const [launching, setLaunching] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
+
+  const handleStudyPackChanged =
+    useCallback(() => {
+      setReloadKey(
+        (current) => current + 1,
+      );
+    }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -290,6 +299,13 @@ export default function StudyPackProgressPage() {
             </p>
           </article>
         </section>
+
+        <StudyPackManagement
+          studyPackId={studyPackId}
+          onStudyPackChanged={
+            handleStudyPackChanged
+          }
+        />
 
         {activeSession && (
           <section className="study-pack-detail-current-section">
