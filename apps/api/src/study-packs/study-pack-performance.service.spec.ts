@@ -90,6 +90,80 @@ describe('StudyPackPerformanceService', () => {
         }),
       },
 
+      studyTopic: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: 'topic-os',
+
+            name: 'Operating Systems',
+
+            position: 0,
+
+            coreConcepts: [
+              {
+                id: 'core-process',
+
+                name: 'Process Management',
+
+                importance: 5,
+
+                position: 0,
+
+                atomicConcepts: [
+                  {
+                    id: 'concept-1',
+
+                    mastery: {
+                      masteryScore: 0.8,
+
+                      evidenceWeight: 3,
+
+                      attemptCount: 3,
+                    },
+                  },
+
+                  {
+                    id: 'concept-3',
+
+                    mastery: {
+                      masteryScore: 0.5,
+
+                      evidenceWeight: 0,
+
+                      attemptCount: 0,
+                    },
+                  },
+                ],
+              },
+
+              {
+                id: 'core-memory',
+
+                name: 'Memory Management',
+
+                importance: 4,
+
+                position: 1,
+
+                atomicConcepts: [
+                  {
+                    id: 'concept-2',
+
+                    mastery: {
+                      masteryScore: 0.6,
+
+                      evidenceWeight: 2,
+
+                      attemptCount: 2,
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+        ]),
+      },
+
       answerEvaluation: {
         findMany: jest.fn().mockResolvedValue([
           {
@@ -262,6 +336,89 @@ describe('StudyPackPerformanceService', () => {
       },
     });
 
+    expect(prisma.studyTopic.findMany).toHaveBeenCalledWith({
+      where: {
+        studyPackId: 'pack-1',
+      },
+
+      orderBy: [
+        {
+          position: 'asc',
+        },
+        {
+          id: 'asc',
+        },
+      ],
+
+      select: {
+        id: true,
+
+        name: true,
+
+        position: true,
+
+        coreConcepts: {
+          orderBy: [
+            {
+              position: 'asc',
+            },
+            {
+              id: 'asc',
+            },
+          ],
+
+          select: {
+            id: true,
+
+            name: true,
+
+            importance: true,
+
+            position: true,
+
+            atomicConcepts: {
+              where: {
+                sources: {
+                  some: {
+                    chunk: {
+                      unit: {
+                        document: {
+                          status: 'READY',
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+
+              orderBy: [
+                {
+                  positionInCore: 'asc',
+                },
+                {
+                  id: 'asc',
+                },
+              ],
+
+              select: {
+                id: true,
+
+                mastery: {
+                  select: {
+                    masteryScore: true,
+
+                    evidenceWeight: true,
+
+                    attemptCount: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
     expect(prisma.answerEvaluation.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
@@ -405,6 +562,118 @@ describe('StudyPackPerformanceService', () => {
       },
     ]);
 
+    expect(result.hierarchy.topics).toEqual([
+      {
+        id: 'topic-os',
+
+        name: 'Operating Systems',
+
+        position: 0,
+
+        coreConceptCount: 2,
+
+        evaluatedCoreConceptCount: 2,
+
+        unevaluatedCoreConceptCount: 0,
+
+        atomicConceptCount: 3,
+
+        evaluatedAtomicConceptCount: 2,
+
+        averageMastery: 0.7,
+      },
+    ]);
+
+    expect(result.hierarchy.coreConcepts).toEqual([
+      {
+        id: 'core-process',
+
+        name: 'Process Management',
+
+        topicId: 'topic-os',
+
+        topicName: 'Operating Systems',
+
+        topicPosition: 0,
+
+        importance: 5,
+
+        position: 0,
+
+        atomicConceptCount: 2,
+
+        evaluatedAtomicConceptCount: 1,
+
+        unevaluatedAtomicConceptCount: 1,
+
+        averageMastery: 0.8,
+
+        totalAttemptCount: 3,
+
+        totalEvidenceWeight: 3,
+      },
+
+      {
+        id: 'core-memory',
+
+        name: 'Memory Management',
+
+        topicId: 'topic-os',
+
+        topicName: 'Operating Systems',
+
+        topicPosition: 0,
+
+        importance: 4,
+
+        position: 1,
+
+        atomicConceptCount: 1,
+
+        evaluatedAtomicConceptCount: 1,
+
+        unevaluatedAtomicConceptCount: 0,
+
+        averageMastery: 0.6,
+
+        totalAttemptCount: 2,
+
+        totalEvidenceWeight: 2,
+      },
+    ]);
+
+    expect(result.hierarchy.strongestCoreConcept).toEqual({
+      id: 'core-process',
+
+      name: 'Process Management',
+
+      topicId: 'topic-os',
+
+      topicName: 'Operating Systems',
+
+      averageMastery: 0.8,
+
+      evaluatedAtomicConceptCount: 1,
+
+      atomicConceptCount: 2,
+    });
+
+    expect(result.hierarchy.weakestCoreConcept).toEqual({
+      id: 'core-memory',
+
+      name: 'Memory Management',
+
+      topicId: 'topic-os',
+
+      topicName: 'Operating Systems',
+
+      averageMastery: 0.6,
+
+      evaluatedAtomicConceptCount: 1,
+
+      atomicConceptCount: 1,
+    });
+
     expect(result.concepts).toEqual([
       {
         id: 'concept-1',
@@ -480,6 +749,10 @@ describe('StudyPackPerformanceService', () => {
         }),
       },
 
+      studyTopic: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+
       answerEvaluation: {
         findMany: jest.fn().mockResolvedValue([]),
       },
@@ -529,6 +802,16 @@ describe('StudyPackPerformanceService', () => {
 
     expect(result.sessionTrend).toEqual([]);
 
+    expect(result.hierarchy).toEqual({
+      topics: [],
+
+      coreConcepts: [],
+
+      strongestCoreConcept: null,
+
+      weakestCoreConcept: null,
+    });
+
     expect(result.concepts).toEqual([]);
   });
 
@@ -536,6 +819,10 @@ describe('StudyPackPerformanceService', () => {
     const prisma = {
       studyPack: {
         findFirst: jest.fn().mockResolvedValue(null),
+      },
+
+      studyTopic: {
+        findMany: jest.fn(),
       },
 
       answerEvaluation: {
@@ -554,6 +841,8 @@ describe('StudyPackPerformanceService', () => {
     await expect(
       service.findOne('pack-foreign', 'user-1', now),
     ).rejects.toThrow('Study Pack pack-foreign was not found');
+
+    expect(prisma.studyTopic.findMany).not.toHaveBeenCalled();
 
     expect(prisma.answerEvaluation.findMany).not.toHaveBeenCalled();
 

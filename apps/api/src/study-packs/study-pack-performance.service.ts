@@ -8,6 +8,10 @@ import {
   summarizePerformanceAnswers,
   summarizePerformanceConcepts,
 } from './study-pack-performance';
+import {
+  PerformanceHierarchySummary,
+  summarizePerformanceHierarchy,
+} from './study-pack-performance-hierarchy';
 
 export type StudyPackPerformanceConcept = {
   id: string;
@@ -61,6 +65,8 @@ export type StudyPackPerformanceResult = {
   answerQuality: PerformanceAnswerSummary;
 
   sessionTrend: StudyPackPerformanceSessionTrendPoint[];
+
+  hierarchy: PerformanceHierarchySummary;
 
   concepts: StudyPackPerformanceConcept[];
 };
@@ -140,6 +146,102 @@ export class StudyPackPerformanceService {
     if (!studyPack) {
       throw new NotFoundException(`Study Pack ${studyPackId} was not found`);
     }
+
+    /*
+     * Hierarchy performance is based on the persisted
+     * learner-facing Topic → Core Concept → Atomic
+     * Concept structure.
+     *
+     * Only Atomic Concepts still backed by READY
+     * material participate. This keeps hierarchy
+     * performance aligned with the active-concept
+     * definition used throughout StudyLoop.
+     *
+     * Hierarchy freshness/status is handled separately
+     * by the Phase 8 stale-hierarchy read-model state.
+     */
+    const hierarchyTopics = await this.prisma.studyTopic.findMany({
+      where: {
+        studyPackId,
+      },
+
+      orderBy: [
+        {
+          position: 'asc',
+        },
+        {
+          id: 'asc',
+        },
+      ],
+
+      select: {
+        id: true,
+
+        name: true,
+
+        position: true,
+
+        coreConcepts: {
+          orderBy: [
+            {
+              position: 'asc',
+            },
+            {
+              id: 'asc',
+            },
+          ],
+
+          select: {
+            id: true,
+
+            name: true,
+
+            importance: true,
+
+            position: true,
+
+            atomicConcepts: {
+              where: {
+                sources: {
+                  some: {
+                    chunk: {
+                      unit: {
+                        document: {
+                          status: 'READY',
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+
+              orderBy: [
+                {
+                  positionInCore: 'asc',
+                },
+                {
+                  id: 'asc',
+                },
+              ],
+
+              select: {
+                id: true,
+
+                mastery: {
+                  select: {
+                    masteryScore: true,
+
+                    evidenceWeight: true,
+
+                    attemptCount: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
 
     /*
      * Answer quality is historical learner evidence.
@@ -226,6 +328,8 @@ export class StudyPackPerformanceService {
     const mastery = summarizePerformanceConcepts(studyPack.concepts, now);
 
     const answerQuality = summarizePerformanceAnswers(evaluations);
+
+    const hierarchy = summarizePerformanceHierarchy(hierarchyTopics);
 
     const sessionTrend: StudyPackPerformanceSessionTrendPoint[] = [];
 
@@ -326,6 +430,8 @@ export class StudyPackPerformanceService {
       answerQuality,
 
       sessionTrend,
+
+      hierarchy,
 
       concepts,
     };
