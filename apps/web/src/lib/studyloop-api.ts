@@ -49,6 +49,46 @@ export type StudyPack = {
   documents: ApiDocument[];
 };
 
+export type UpdateStudyPackInput = {
+  name?: string;
+
+  description?: string | null;
+
+  goal?: string | null;
+};
+
+export type StudyPackDocumentManagementItem = {
+  id: string;
+
+  studyPackId: string;
+
+  originalName: string;
+
+  mimeType: string;
+
+  sizeBytes: number;
+
+  status:
+    | "UPLOADED"
+    | "PROCESSING"
+    | "READY"
+    | "FAILED";
+
+  errorMessage: string | null;
+
+  conceptStatus:
+    | "PENDING"
+    | "PROCESSING"
+    | "READY"
+    | "FAILED";
+
+  conceptErrorMessage: string | null;
+
+  createdAt: string;
+
+  updatedAt: string;
+};
+
 export type DocumentUploadRejection = {
   originalName: string;
 
@@ -790,6 +830,53 @@ export const studyLoopApi = {
   getStudyPack(studyPackId: string) {
     return request<StudyPack>(
       `/study-packs/${encodeURIComponent(studyPackId)}`,
+    );
+  },
+
+  updateStudyPack(
+    studyPackId: string,
+    input: UpdateStudyPackInput,
+  ) {
+    return request<StudyPack>(
+      `/study-packs/${encodeURIComponent(studyPackId)}`,
+      {
+        method: "PATCH",
+
+        headers: {
+          "Content-Type": "application/json",
+        },
+
+        body: JSON.stringify(input),
+      },
+    );
+  },
+
+  deleteStudyPack(studyPackId: string) {
+    return request<void>(
+      `/study-packs/${encodeURIComponent(studyPackId)}`,
+      {
+        method: "DELETE",
+      },
+    );
+  },
+
+  getStudyPackDocuments(studyPackId: string) {
+    return request<StudyPackDocumentManagementItem[]>(
+      `/study-packs/${encodeURIComponent(studyPackId)}/documents`,
+    );
+  },
+
+  deleteStudyPackDocument(
+    studyPackId: string,
+    documentId: string,
+  ) {
+    return request<void>(
+      `/study-packs/${encodeURIComponent(
+        studyPackId,
+      )}/documents/${encodeURIComponent(documentId)}`,
+      {
+        method: "DELETE",
+      },
     );
   },
 
