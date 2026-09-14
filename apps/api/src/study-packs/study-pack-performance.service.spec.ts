@@ -109,6 +109,86 @@ describe('StudyPackPerformanceService', () => {
 
             correctness: 'INCORRECT',
           },
+
+          {
+            score: 0.8,
+
+            correctness: 'CORRECT',
+          },
+        ]),
+      },
+
+      studySession: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: 'normal-1',
+
+            kind: 'NORMAL',
+
+            status: 'COMPLETED',
+
+            startedAt: new Date('2026-09-01T10:00:00.000Z'),
+
+            completedAt: new Date('2026-09-01T10:05:00.000Z'),
+
+            attempts: [
+              {
+                evaluation: null,
+              },
+            ],
+          },
+
+          {
+            id: 'normal-2',
+
+            kind: 'NORMAL',
+
+            status: 'ABANDONED',
+
+            startedAt: new Date('2026-09-05T10:00:00.000Z'),
+
+            completedAt: null,
+
+            attempts: [
+              {
+                evaluation: {
+                  score: 1,
+
+                  correctness: 'CORRECT',
+                },
+              },
+
+              {
+                evaluation: {
+                  score: 0.6,
+
+                  correctness: 'PARTIAL',
+                },
+              },
+            ],
+          },
+
+          {
+            id: 'review-1',
+
+            kind: 'REVIEW',
+
+            status: 'COMPLETED',
+
+            startedAt: new Date('2026-09-10T10:00:00.000Z'),
+
+            completedAt: new Date('2026-09-10T10:05:00.000Z'),
+
+            attempts: [
+              {
+                evaluation: {
+                  score: 0.2,
+
+                  correctness: 'INCORRECT',
+                },
+              },
+            ],
+          },
         ]),
       },
     };
@@ -196,6 +276,45 @@ describe('StudyPackPerformanceService', () => {
       }),
     );
 
+    expect(prisma.studySession.findMany).toHaveBeenCalledWith({
+      where: {
+        studyPackId: 'pack-1',
+      },
+
+      orderBy: [
+        {
+          startedAt: 'asc',
+        },
+        {
+          id: 'asc',
+        },
+      ],
+
+      select: {
+        id: true,
+
+        kind: true,
+
+        status: true,
+
+        startedAt: true,
+
+        completedAt: true,
+
+        attempts: {
+          select: {
+            evaluation: {
+              select: {
+                score: true,
+
+                correctness: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
     expect(result.mastery).toEqual({
       activeConceptCount: 3,
 
@@ -215,18 +334,76 @@ describe('StudyPackPerformanceService', () => {
     });
 
     expect(result.answerQuality).toEqual({
-      evaluatedAnswerCount: 3,
+      evaluatedAnswerCount: 4,
 
-      averageScore: 0.6,
+      averageScore: 0.65,
 
       correctness: {
-        correct: 1,
+        correct: 2,
 
         partial: 1,
 
         incorrect: 1,
       },
     });
+
+    expect(result.sessionTrend).toEqual([
+      {
+        sessionId: 'normal-2',
+
+        sessionNumber: 2,
+
+        kind: 'NORMAL',
+
+        status: 'ABANDONED',
+
+        startedAt: new Date('2026-09-05T10:00:00.000Z'),
+
+        completedAt: null,
+
+        answerQuality: {
+          evaluatedAnswerCount: 2,
+
+          averageScore: 0.8,
+
+          correctness: {
+            correct: 1,
+
+            partial: 1,
+
+            incorrect: 0,
+          },
+        },
+      },
+
+      {
+        sessionId: 'review-1',
+
+        sessionNumber: null,
+
+        kind: 'REVIEW',
+
+        status: 'COMPLETED',
+
+        startedAt: new Date('2026-09-10T10:00:00.000Z'),
+
+        completedAt: new Date('2026-09-10T10:05:00.000Z'),
+
+        answerQuality: {
+          evaluatedAnswerCount: 1,
+
+          averageScore: 0.2,
+
+          correctness: {
+            correct: 0,
+
+            partial: 0,
+
+            incorrect: 1,
+          },
+        },
+      },
+    ]);
 
     expect(result.concepts).toEqual([
       {
@@ -306,6 +483,10 @@ describe('StudyPackPerformanceService', () => {
       answerEvaluation: {
         findMany: jest.fn().mockResolvedValue([]),
       },
+
+      studySession: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
     };
 
     const service = new StudyPackPerformanceService(
@@ -346,6 +527,8 @@ describe('StudyPackPerformanceService', () => {
       },
     });
 
+    expect(result.sessionTrend).toEqual([]);
+
     expect(result.concepts).toEqual([]);
   });
 
@@ -356,6 +539,10 @@ describe('StudyPackPerformanceService', () => {
       },
 
       answerEvaluation: {
+        findMany: jest.fn(),
+      },
+
+      studySession: {
         findMany: jest.fn(),
       },
     };
@@ -369,5 +556,7 @@ describe('StudyPackPerformanceService', () => {
     ).rejects.toThrow('Study Pack pack-foreign was not found');
 
     expect(prisma.answerEvaluation.findMany).not.toHaveBeenCalled();
+
+    expect(prisma.studySession.findMany).not.toHaveBeenCalled();
   });
 });

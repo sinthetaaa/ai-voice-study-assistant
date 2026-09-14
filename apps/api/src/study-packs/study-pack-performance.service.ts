@@ -33,6 +33,22 @@ export type StudyPackPerformanceConcept = {
   } | null;
 };
 
+export type StudyPackPerformanceSessionTrendPoint = {
+  sessionId: string;
+
+  sessionNumber: number | null;
+
+  kind: 'NORMAL' | 'REVIEW';
+
+  status: 'ACTIVE' | 'COMPLETED' | 'ABANDONED';
+
+  startedAt: Date;
+
+  completedAt: Date | null;
+
+  answerQuality: PerformanceAnswerSummary;
+};
+
 export type StudyPackPerformanceResult = {
   studyPack: {
     id: string;
@@ -43,6 +59,8 @@ export type StudyPackPerformanceResult = {
   mastery: PerformanceConceptSummary;
 
   answerQuality: PerformanceAnswerSummary;
+
+  sessionTrend: StudyPackPerformanceSessionTrendPoint[];
 
   concepts: StudyPackPerformanceConcept[];
 };
@@ -158,9 +176,89 @@ export class StudyPackPerformanceService {
       },
     });
 
+    /*
+     * Session trend is based only on evaluated answers
+     * that belong to a persisted StudySession.
+     *
+     * Sessions without evaluated answers remain part
+     * of Normal-session numbering, but they do not
+     * create meaningless empty chart points.
+     */
+    const sessions = await this.prisma.studySession.findMany({
+      where: {
+        studyPackId,
+      },
+
+      orderBy: [
+        {
+          startedAt: 'asc',
+        },
+        {
+          id: 'asc',
+        },
+      ],
+
+      select: {
+        id: true,
+
+        kind: true,
+
+        status: true,
+
+        startedAt: true,
+
+        completedAt: true,
+
+        attempts: {
+          select: {
+            evaluation: {
+              select: {
+                score: true,
+
+                correctness: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
     const mastery = summarizePerformanceConcepts(studyPack.concepts, now);
 
     const answerQuality = summarizePerformanceAnswers(evaluations);
+
+    const sessionTrend: StudyPackPerformanceSessionTrendPoint[] = [];
+
+    let normalSessionNumber = 0;
+
+    for (const session of sessions) {
+      const sessionNumber =
+        session.kind === 'NORMAL' ? ++normalSessionNumber : null;
+
+      const sessionEvaluations = session.attempts.flatMap((attempt) =>
+        attempt.evaluation ? [attempt.evaluation] : [],
+      );
+
+      if (sessionEvaluations.length === 0) {
+        continue;
+      }
+
+      sessionTrend.push({
+        sessionId: session.id,
+
+        sessionNumber,
+
+        kind: session.kind,
+
+        status: session.status,
+
+        startedAt: session.startedAt,
+
+        completedAt: session.completedAt,
+
+        answerQuality: summarizePerformanceAnswers(sessionEvaluations),
+      });
+    }
 
     const concepts: StudyPackPerformanceConcept[] = studyPack.concepts.map(
       (concept) => {
@@ -226,6 +324,8 @@ export class StudyPackPerformanceService {
       mastery,
 
       answerQuality,
+
+      sessionTrend,
 
       concepts,
     };
