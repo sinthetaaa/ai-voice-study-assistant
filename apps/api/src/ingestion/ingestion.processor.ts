@@ -49,9 +49,41 @@ export class IngestionProcessor extends WorkerHost {
     if (job.name === GENERATE_STUDY_PACK_HIERARCHY_JOB) {
       const hierarchyJob = job.data as GenerateStudyPackHierarchyJobData;
 
-      await this.conceptsService.tryGenerateStudyPackHierarchy(
-        hierarchyJob.studyPackId,
-      );
+      try {
+        await this.conceptsService.tryGenerateStudyPackHierarchy(
+          hierarchyJob.studyPackId,
+        );
+      } catch (error) {
+        /*
+         * A hierarchy job may still be queued or running
+         * after its Study Pack has been deleted.
+         *
+         * Suppress only that stale-job case. Real hierarchy
+         * failures for an existing Study Pack must still retry.
+         */
+        try {
+          const studyPack = await this.prisma.studyPack.findUnique({
+            where: {
+              id: hierarchyJob.studyPackId,
+            },
+            select: {
+              id: true,
+            },
+          });
+
+          if (!studyPack) {
+            this.logger.log(
+              `Skipping hierarchy generation for deleted Study Pack ` +
+                hierarchyJob.studyPackId,
+            );
+            return;
+          }
+        } catch {
+          throw error;
+        }
+
+        throw error;
+      }
 
       return;
     }
@@ -69,27 +101,28 @@ export class IngestionProcessor extends WorkerHost {
     });
 
     if (!document) {
-      throw new Error(`Document ${documentJob.documentId} was not found`);
+      this.logger.log(`Skipping deleted document ${documentJob.documentId}`);
+      return;
     }
 
     this.logger.log(`Processing ${document.originalName} (${document.id})`);
 
-    await this.prisma.document.update({
-      where: {
-        id: document.id,
-      },
-
-      data: {
-        status: 'PROCESSING',
-        errorMessage: null,
-        conceptStatus: 'PENDING',
-        conceptErrorMessage: null,
-      },
-    });
-
     let documentContentReady = false;
 
     try {
+      await this.prisma.document.update({
+        where: {
+          id: document.id,
+        },
+
+        data: {
+          status: 'PROCESSING',
+          errorMessage: null,
+          conceptStatus: 'PENDING',
+          conceptErrorMessage: null,
+        },
+      });
+
       if (!document.storageKey) {
         throw new Error(`Document ${document.id} has no storage key`);
       }
@@ -383,6 +416,37 @@ export class IngestionProcessor extends WorkerHost {
 
       await this.enqueueHierarchyGenerationSafely(document.studyPackId);
     } catch (error) {
+      /*
+       * The Study Pack or Document may be deleted while this
+       * worker is parsing, embedding, or generating concepts.
+       *
+       * If PostgreSQL confirms that the Document no longer
+       * exists, deletion owns the lifecycle and this stale
+       * BullMQ job should finish successfully rather than retry.
+       *
+       * If the existence check itself fails, preserve the
+       * original processing failure and normal retry behaviour.
+       */
+      try {
+        const existingDocument = await this.prisma.document.findUnique({
+          where: {
+            id: document.id,
+          },
+          select: {
+            id: true,
+          },
+        });
+
+        if (!existingDocument) {
+          this.logger.log(
+            `Stopping stale ingestion job for deleted document ${document.id}`,
+          );
+          return;
+        }
+      } catch {
+        throw error;
+      }
+
       const message =
         error instanceof Error ? error.message : 'Unknown ingestion error';
 

@@ -1,8 +1,12 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Req,
@@ -14,6 +18,7 @@ import type { AuthenticatedRequest } from '../auth/session-auth.guard';
 import { CreateStudyPackDto } from './dto/create-study-pack.dto';
 import { UpdateStudyPackDto } from './dto/update-study-pack.dto';
 
+import { StudyPackDeletionService } from './study-pack-deletion.service';
 import { StudyPackOverviewService } from './study-pack-overview.service';
 
 import { StudyPackProgressService } from './study-pack-progress.service';
@@ -24,6 +29,7 @@ import { StudyPacksService } from './study-packs.service';
 export class StudyPacksController {
   constructor(
     private readonly studyPacksService: StudyPacksService,
+    private readonly studyPackDeletionService: StudyPackDeletionService,
 
     private readonly studyPackOverviewService: StudyPackOverviewService,
 
@@ -68,6 +74,17 @@ export class StudyPacksController {
       this.requireUserId(request),
       updateStudyPackDto,
     );
+  }
+
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async remove(
+    @Req()
+    request: AuthenticatedRequest,
+    @Param('id', new ParseUUIDPipe())
+    id: string,
+  ): Promise<void> {
+    await this.studyPackDeletionService.remove(id, this.requireUserId(request));
   }
 
   @Get()

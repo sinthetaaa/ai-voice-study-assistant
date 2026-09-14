@@ -89,6 +89,11 @@ function hierarchyJob() {
 
 function createHarness() {
   const prisma = {
+    studyPack: {
+      findUnique: jest.fn().mockResolvedValue({
+        id: document.studyPackId,
+      }),
+    },
     document: {
       findUnique: jest.fn().mockResolvedValue({
         ...document,
@@ -188,9 +193,90 @@ function createHarness() {
   };
 }
 
-function updatePayloads(prisma: ReturnType<typeof createHarness>['prisma']) {
-  return prisma.document.update.mock.calls.map(([argument]) => argument.data);
+type DocumentUpdatePayload = {
+  status?: string;
+  errorMessage?: string | null;
+  conceptStatus?: string;
+  conceptErrorMessage?: string | null;
+  [key: string]: unknown;
+};
+
+function updatePayloads(
+  prisma: ReturnType<typeof createHarness>['prisma'],
+): DocumentUpdatePayload[] {
+  const calls = prisma.document.update.mock.calls as unknown as Array<
+    [{ data: DocumentUpdatePayload }]
+  >;
+
+  return calls.map(([argument]) => argument.data);
 }
+
+describe('Ingestion deletion races', () => {
+  it('treats an already deleted document job as a successful no-op', async () => {
+    const { processor, prisma, storage, conceptsService } = createHarness();
+
+    prisma.document.findUnique.mockResolvedValueOnce(null);
+
+    await expect(
+      processor.process(processDocumentJob() as never),
+    ).resolves.toBeUndefined();
+
+    expect(prisma.document.update).not.toHaveBeenCalled();
+    expect(storage.readDocument).not.toHaveBeenCalled();
+    expect(conceptsService.generateStudyPackConcepts).not.toHaveBeenCalled();
+  });
+
+  it('stops successfully when a document is deleted while processing', async () => {
+    const { processor, prisma, storage, ingestionQueueService } =
+      createHarness();
+
+    prisma.document.findUnique
+      .mockResolvedValueOnce({
+        ...document,
+      })
+      .mockResolvedValueOnce(null);
+
+    storage.readDocument.mockRejectedValue(new Error('file disappeared'));
+
+    await expect(
+      processor.process(processDocumentJob() as never),
+    ).resolves.toBeUndefined();
+
+    expect(
+      ingestionQueueService.enqueueStudyPackHierarchy,
+    ).not.toHaveBeenCalled();
+  });
+
+  it('treats a hierarchy job for a deleted Study Pack as a successful no-op', async () => {
+    const { processor, prisma, conceptsService } = createHarness();
+
+    conceptsService.tryGenerateStudyPackHierarchy.mockRejectedValue(
+      new Error('Study Pack was deleted'),
+    );
+
+    prisma.studyPack.findUnique.mockResolvedValueOnce(null);
+
+    await expect(
+      processor.process(hierarchyJob() as never),
+    ).resolves.toBeUndefined();
+  });
+
+  it('still propagates hierarchy failures while the Study Pack exists', async () => {
+    const { processor, prisma, conceptsService } = createHarness();
+
+    conceptsService.tryGenerateStudyPackHierarchy.mockRejectedValue(
+      new Error('hierarchy AI unavailable'),
+    );
+
+    prisma.studyPack.findUnique.mockResolvedValueOnce({
+      id: document.studyPackId,
+    });
+
+    await expect(processor.process(hierarchyJob() as never)).rejects.toThrow(
+      'hierarchy AI unavailable',
+    );
+  });
+});
 
 describe('Ingestion hierarchy orchestration', () => {
   it('runs hierarchy jobs without re-running document ingestion', async () => {

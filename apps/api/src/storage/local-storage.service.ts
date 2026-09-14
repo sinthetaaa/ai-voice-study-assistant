@@ -69,6 +69,17 @@ export class LocalStorageService {
     await writeFile(absolutePath, buffer);
   }
 
+  async deleteStudyPackDocuments(studyPackId: string): Promise<void> {
+    const studyPackDirectory = this.resolveStoragePath(
+      join('documents', studyPackId),
+    );
+
+    await rm(studyPackDirectory, {
+      recursive: true,
+      force: true,
+    });
+  }
+
   async delete(storageKey: string) {
     await Promise.allSettled([
       rm(this.resolveStoragePath(storageKey), {
