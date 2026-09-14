@@ -22,6 +22,36 @@ describe('Study Pack readiness policy', () => {
     expect(result.conceptExtraction.settled).toBe(false);
   });
 
+  it('makes a current READY hierarchy unavailable as soon as a new document is uploaded', () => {
+    const result = buildStudyPackPreparationSnapshot({
+      documents: [
+        {
+          status: 'READY',
+          conceptStatus: 'READY',
+        },
+        {
+          status: 'UPLOADED',
+          conceptStatus: 'PENDING',
+        },
+      ],
+      hierarchyStatus: 'READY',
+      hierarchyRevision: 4,
+      hierarchyGeneratedRevision: 4,
+    });
+
+    expect(result.state).toBe('INCOMPLETE');
+
+    /*
+     * The old hierarchy is still internally current
+     * for the concepts it represents, but the Study
+     * Pack itself is no longer ready because new
+     * material has entered the pipeline.
+     */
+    expect(result.hierarchy.current).toBe(true);
+    expect(result.documents.settled).toBe(false);
+    expect(result.conceptExtraction.settled).toBe(false);
+  });
+
   it('keeps READY material incomplete while concept extraction is pending', () => {
     const result = buildStudyPackPreparationSnapshot({
       documents: [

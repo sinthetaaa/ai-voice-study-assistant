@@ -333,6 +333,19 @@ describe('Ingestion hierarchy orchestration', () => {
     expect(
       ingestionQueueService.enqueueStudyPackHierarchy,
     ).toHaveBeenCalledWith('pack-1');
+
+    const readyConceptUpdateCall = updates.findIndex(
+      (data) => data.conceptStatus === 'READY',
+    );
+
+    expect(readyConceptUpdateCall).toBeGreaterThanOrEqual(0);
+
+    expect(
+      prisma.document.update.mock.invocationCallOrder[readyConceptUpdateCall],
+    ).toBeLessThan(
+      ingestionQueueService.enqueueStudyPackHierarchy.mock
+        .invocationCallOrder[0],
+    );
   });
 
   it('keeps material READY when concept processing permanently fails', async () => {
